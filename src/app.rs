@@ -5,7 +5,7 @@ use leptos_router::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct TodoItem {
+pub struct TodoItem {
     id: u64,
     done: bool,
     task: String,
@@ -85,8 +85,7 @@ fn HomePage() -> impl IntoView {
     //let delete_todo = create_server_action::<DeleteTodo>();
 
     // list of todos is loaded from the server in reaction to changes
-    // let todos = create_resource(move || (add_todo, delete_todo), move |_| get_todos());
-    let todos = create_resource(move || (add_todo), move |_| get_todos());
+    let todos = create_resource(move || (add_todo.version().get()), move |_| get_todos());
 
     view! {
         <Sidebar />
@@ -103,24 +102,48 @@ fn Sidebar() -> impl IntoView {
 }
 
 #[component]
-fn Todolist(
-    todos: Resource<Action<Vec<TodoItem>, Result<(), ServerFnError>>, Vec<TodoItem>>,
-) -> impl IntoView {
+fn Todolist(todos: Resource<usize, Result<Vec<TodoItem>, leptos::ServerFnError>>) -> impl IntoView {
     view! {
-        <div>
-            <For
-                // a function that returns the items we're iterating over; a signal is fine
-                each=todos
-                // a unique key for each item
-                key=|item| item.id
-                // renders each item to a view
-                children=move |item: TodoItem| {
-                  view! {
-                    <div>{if item.done {"D"} else {"U"}} " " {item.task}</div>
-                  }
-                }
-            />
-        </div>
+        <Suspense fallback=move || view! { <p>"Loading..."</p> }>
+            {move || {
+                todos.get()
+                    .map(|item| view! {
+                        <div>{if item.done {"D"} else {"U"}} " " {item.task}</div>
+                    })
+            }}
+        </Suspense>
+
+    /*
+        <Suspense>
+            <div>
+                {move || match todos.get() {
+                    None => view! { <p>"Loading..."</p> }.into_view(),
+                    Some(result) => match result {
+                        Err(e) => view! { <p>"Error loading: " {e.to_string()}</p> }.into_view(),
+                        Ok(data) => view! { <ShowTodos data /> }.into_view(),
+                    }
+                }}
+            </div>
+        </Suspense>
+    */
+    }
+}
+
+#[component]
+fn ShowTodos(data: Vec<TodoItem>) -> impl IntoView {
+    view! {
+        <For
+            // a function that returns the items we're iterating over; a signal is fine
+            each=move || data.clone().into_iter()
+            // a unique key for each item
+            key=|item| item.id
+            // renders each item to a view
+            children=move |item| {
+              view! {
+                <div>{if item.done {"D"} else {"U"}} " " {item.task}</div>
+              }
+            }
+        />
     }
 }
 
