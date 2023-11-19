@@ -1,45 +1,66 @@
 use crate::error_template::{AppError, ErrorTemplate};
+use cfg_if::cfg_if;
 use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ssr", derive(sqlx::FromRow))]
 pub struct TodoItem {
-    id: u64,
+    id: u32,
     done: bool,
     task: String,
 }
 
+cfg_if! {
+    if #[cfg(feature = "ssr")] {
+        use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
+
+        pub async fn db() -> Result<SqlitePool, ServerFnError> {
+    println!("############## TEST");
+    println!("############## TEST");
+    println!("############## TEST");
+    println!("############## TEST");
+    println!("############## TEST");
+    println!("############## TEST");
+    println!("############## TEST");
+    println!("############## TEST");
+
+
+            let filename = "Todos.db";
+            let options = SqliteConnectOptions::new()
+                .filename(filename)
+                .create_if_missing(true);
+
+            Ok(SqlitePool::connect_with(options).await?)
+        }
+    }
+}
+
 #[server(GetTodos, "/api")]
 pub async fn get_todos() -> Result<Vec<TodoItem>, ServerFnError> {
-    Ok(vec![
-        TodoItem {
-            id: 0,
-            done: true,
-            task: "Empty garbage".into(),
-        },
-        TodoItem {
-            id: 1,
-            done: true,
-            task: "Clean toilet".into(),
-        },
-        TodoItem {
-            id: 2,
-            done: false,
-            task: "Buy diapers".into(),
-        },
-        TodoItem {
-            id: 3,
-            done: false,
-            task: "Walk the dog".into(),
-        },
-    ])
+    let pool = db().await?;
+
+    let todos = sqlx::query_as::<_, TodoItem>("SELECT * FROM todos")
+        .fetch_all(&pool)
+        .await?;
+
+    Ok(todos)
 }
 
 #[server(AddTodo, "/api")]
-pub async fn add_todo(_todo: String) -> Result<(), ServerFnError> {
-    Ok(())
+pub async fn add_todo(todo: String) -> Result<(), ServerFnError> {
+    let pool = db().await?;
+
+    match sqlx::query("INSERT INTO todos (done, task) VALUES ($1, false)")
+        .bind(todo)
+        .execute(&pool)
+        .await
+    {
+        Ok(_row) => Ok(()),
+        Err(e) => Err(ServerFnError::ServerError(e.to_string())),
+    }
 }
 
 #[component]
@@ -59,6 +80,11 @@ pub fn App() -> impl IntoView {
 
         // sets the document title
         <Title text="Todo"/>
+
+        <Meta
+            name="color-scheme"
+            content="dark"
+        />
 
         // content for this welcome page
         <Router fallback=|| {
@@ -90,7 +116,7 @@ fn HomePage() -> impl IntoView {
     view! {
         <Sidebar />
         <Todolist todos/>
-        //<Todoadd set_todos/>
+        <Todoadd add_todo/>
     }
 }
 
@@ -102,30 +128,19 @@ fn Sidebar() -> impl IntoView {
 }
 
 #[component]
-fn Todolist(todos: Resource<usize, Result<Vec<TodoItem>, leptos::ServerFnError>>) -> impl IntoView {
+fn Todolist(todos: Resource<usize, Result<Vec<TodoItem>, ServerFnError>>) -> impl IntoView {
     view! {
-        <Suspense fallback=move || view! { <p>"Loading..."</p> }>
-            {move || {
-                todos.get()
-                    .map(|item| view! {
-                        <div>{if item.done {"D"} else {"U"}} " " {item.task}</div>
-                    })
-            }}
-        </Suspense>
-
-    /*
-        <Suspense>
-            <div>
+        <div>
+            <Suspense fallback=move || view! { <p>"Loading (Suspense Fallback)..."</p> }>
                 {move || match todos.get() {
-                    None => view! { <p>"Loading..."</p> }.into_view(),
+                    None => view! { <p>"Loading... (no data)"</p> }.into_view(),
                     Some(result) => match result {
                         Err(e) => view! { <p>"Error loading: " {e.to_string()}</p> }.into_view(),
                         Ok(data) => view! { <ShowTodos data /> }.into_view(),
                     }
                 }}
-            </div>
-        </Suspense>
-    */
+            </Suspense>
+        </div>
     }
 }
 
@@ -139,17 +154,23 @@ fn ShowTodos(data: Vec<TodoItem>) -> impl IntoView {
             key=|item| item.id
             // renders each item to a view
             children=move |item| {
-              view! {
-                <div>{if item.done {"D"} else {"U"}} " " {item.task}</div>
-              }
+                view! {
+                    <div>{if item.done {"D"} else {"U"}} " " {item.task}</div>
+                }
             }
         />
     }
 }
 
 #[component]
-fn Todoadd(_set_todos: Action<String, Result<(), ServerFnError>>) -> impl IntoView {
+fn Todoadd(add_todo: MultiAction<AddTodo, Result<(), leptos::ServerFnError>>) -> impl IntoView {
     view! {
-        <div><input type="text"/><button>Add</button></div>
+        <MultiActionForm action=add_todo>
+            <label>
+                "Add a Todo"
+                <input type="text" name="todo"/>
+            </label>
+            <input type="submit" value="Add"/>
+        </MultiActionForm>
     }
 }
