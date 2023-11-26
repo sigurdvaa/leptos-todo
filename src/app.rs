@@ -72,11 +72,12 @@ pub fn App() -> impl IntoView {
     // Provides context that manages stylesheets, titles, meta tags, etc.
     provide_meta_context();
 
-    // allow any component to get dark mode state via context
-    // let (dark_mode, _) = create_signal(true);
-    // provide_context(dark_mode);
-
     view! {
+        <Html attr:data-bs-theme="dark" />
+
+        // Bootstrap
+        <Stylesheet href="/css/bootstrap.min.css"/>
+        <Script src="/js/bootstrap.bundle.min.js" defer="true"/>
 
         // injects a stylesheet into the document <head>
         // id=leptos means cargo-leptos will hot-reload this stylesheet
@@ -84,11 +85,6 @@ pub fn App() -> impl IntoView {
 
         // sets the document title
         <Title text="Todo"/>
-
-        <Meta
-            name="color-scheme"
-            content="dark"
-        />
 
         // content for this welcome page
         <Router fallback=|| {
@@ -127,7 +123,31 @@ fn HomePage() -> impl IntoView {
 #[component]
 fn Sidebar() -> impl IntoView {
     view! {
-        <h1>Todo</h1>
+        <nav class="navbar navbar-expand-lg bg-body-tertiary">
+          <div class="container-fluid">
+            <a class="navbar-brand" href="#">Todo</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+              <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarSupportedContent">
+              <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                <li class="nav-item">
+                  <a class="nav-link" aria-current="page" href="#">Mark All Done</a>
+                </li>
+                <li class="nav-item">
+                  <a class="nav-link" href="#">Mark All Undone</a>
+                </li>
+                <li class="nav-item">
+                  <a class="nav-link disabled text-danger" aria-disabled="true">Delete All</a>
+                </li>
+              </ul>
+              <form class="d-flex" role="search">
+                <input class="form-control me-2" type="search" placeholder="Search" aria-label="Search"/>
+                <button class="btn btn-outline-success" type="submit">Search</button>
+              </form>
+            </div>
+          </div>
+        </nav>
     }
 }
 
@@ -169,12 +189,14 @@ fn ShowTodos(data: Vec<TodoItem>) -> impl IntoView {
 #[component]
 fn Todoadd(add_todo: MultiAction<AddTodo, Result<(), leptos::ServerFnError>>) -> impl IntoView {
     view! {
-        <MultiActionForm action=add_todo>
-            <label>
-                "Add a Todo"
-                <input type="text" name="todo"/>
-            </label>
-            <input type="submit" value="Add"/>
-        </MultiActionForm>
+        <div>
+            <MultiActionForm action=add_todo>
+                <label>
+                    "Add a Todo"
+                    <input type="text" name="todo"/>
+                </label>
+                <input type="submit" value="Add"/>
+            </MultiActionForm>
+        </div>
     }
 }
