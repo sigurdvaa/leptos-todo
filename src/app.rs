@@ -5,8 +5,8 @@ use leptos_meta::*;
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ssr", derive(sqlx::FromRow))]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TodoItem {
     id: u32,
     done: bool,
@@ -15,25 +15,29 @@ pub struct TodoItem {
 
 cfg_if! {
     if #[cfg(feature = "ssr")] {
-        use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
+        use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 
         pub async fn db() -> Result<SqlitePool, ServerFnError> {
-    println!("############## TEST");
-    println!("############## TEST");
-    println!("############## TEST");
-    println!("############## TEST");
-    println!("############## TEST");
-    println!("############## TEST");
-    println!("############## TEST");
-    println!("############## TEST");
-
-
             let filename = "Todos.db";
-            let options = SqliteConnectOptions::new()
-                .filename(filename)
-                .create_if_missing(true);
+            let mut created = false;
+            if !Sqlite::database_exists(&filename).await? {
+                Sqlite::create_database(&filename).await?;
+                created = true;
+            }
 
-            Ok(SqlitePool::connect_with(options).await?)
+            let pool = SqlitePool::connect(&filename).await?;
+
+            if created {
+                sqlx::query(
+                    "CREATE TABLE IF NOT EXISTS todos (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        done BOOLEAN NOT NULL,
+                        task TEXT NOT NULL
+                    );",
+                ).execute(&pool).await?;
+            }
+
+            Ok(pool)
         }
     }
 }
@@ -53,7 +57,7 @@ pub async fn get_todos() -> Result<Vec<TodoItem>, ServerFnError> {
 pub async fn add_todo(todo: String) -> Result<(), ServerFnError> {
     let pool = db().await?;
 
-    match sqlx::query("INSERT INTO todos (done, task) VALUES ($1, false)")
+    match sqlx::query("INSERT INTO todos (task, done) VALUES ($1, false)")
         .bind(todo)
         .execute(&pool)
         .await
@@ -115,8 +119,8 @@ fn HomePage() -> impl IntoView {
 
     view! {
         <Sidebar />
-        <Todolist todos/>
         <Todoadd add_todo/>
+        <Todolist todos/>
     }
 }
 
