@@ -57,12 +57,29 @@ pub async fn get_todos() -> Result<Vec<TodoItem>, ServerFnError> {
 pub async fn add_todo(todo: String) -> Result<(), ServerFnError> {
     let pool = db().await?;
 
+    // fake API delay
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+
     match sqlx::query("INSERT INTO todos (task, done) VALUES ($1, false)")
         .bind(todo)
         .execute(&pool)
         .await
     {
-        Ok(_row) => Ok(()),
+        Ok(_) => Ok(()),
+        Err(e) => Err(ServerFnError::ServerError(e.to_string())),
+    }
+}
+
+#[server(DeleteTodo, "/api")]
+pub async fn del_todo(id: u32) -> Result<(), ServerFnError> {
+    let pool = db().await?;
+
+    match sqlx::query("DELETE FROM todos WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+    {
+        Ok(_) => Ok(()),
         Err(e) => Err(ServerFnError::ServerError(e.to_string())),
     }
 }
@@ -108,15 +125,18 @@ pub fn App() -> impl IntoView {
 #[component]
 fn HomePage() -> impl IntoView {
     let add_todo = create_server_multi_action::<AddTodo>();
-    //let delete_todo = create_server_action::<DeleteTodo>();
+    let delete_todo = create_server_action::<DeleteTodo>();
 
     // list of todos is loaded from the server in reaction to changes
-    let todos = create_resource(move || (add_todo.version().get()), move |_| get_todos());
+    let todos = create_resource(
+        move || (add_todo.version().get(), delete_todo.version().get()),
+        move |_| get_todos(),
+    );
 
     view! {
         <Sidebar />
         <Todoadd add_todo/>
-        <Todolist todos/>
+        <Todolist todos delete_todo/>
     }
 }
 
@@ -152,24 +172,30 @@ fn Sidebar() -> impl IntoView {
 }
 
 #[component]
-fn Todolist(todos: Resource<usize, Result<Vec<TodoItem>, ServerFnError>>) -> impl IntoView {
+fn Todolist(
+    todos: Resource<(usize, usize), Result<Vec<TodoItem>, ServerFnError>>,
+    delete_todo: Action<DeleteTodo, Result<(), leptos::ServerFnError>>,
+) -> impl IntoView {
     view! {
         <div>
-            <Suspense fallback=move || view! { <p>"Loading (Suspense Fallback)..."</p> }>
+            <Transition fallback=move || view! { <p class="text-muted">"Loading..."</p> }>
                 {move || match todos.get() {
-                    None => view! { <p>"Loading... (no data)"</p> }.into_view(),
+                    None => view! { <p class="text-muted">"No data"</p> }.into_view(),
                     Some(result) => match result {
-                        Err(e) => view! { <p>"Error loading: " {e.to_string()}</p> }.into_view(),
-                        Ok(data) => view! { <ShowTodos data /> }.into_view(),
+                        Err(e) => view! { <p class="text-danger">"Error loading: " {e.to_string()}</p> }.into_view(),
+                        Ok(data) => view! { <ShowTodos data delete_todo/> }.into_view(),
                     }
                 }}
-            </Suspense>
+            </Transition>
         </div>
     }
 }
 
 #[component]
-fn ShowTodos(data: Vec<TodoItem>) -> impl IntoView {
+fn ShowTodos(
+    data: Vec<TodoItem>,
+    delete_todo: Action<DeleteTodo, Result<(), leptos::ServerFnError>>,
+) -> impl IntoView {
     view! {
         <For
             // a function that returns the items we're iterating over; a signal is fine
@@ -179,7 +205,12 @@ fn ShowTodos(data: Vec<TodoItem>) -> impl IntoView {
             // renders each item to a view
             children=move |item| {
                 view! {
-                    <div>{if item.done {"D"} else {"U"}} " " {item.task}</div>
+                    <div>{if item.done {"D"} else {"U"}} " " {item.task}
+                        <ActionForm action=delete_todo class="d-inline ps-2">
+                            <input type="hidden" name="id" value={item.id}/>
+                            <input type="submit" value="X" class="btn btn-sm btn-outline-warning"/>
+                        </ActionForm>
+                    </div>
                 }
             }
         />
@@ -193,9 +224,9 @@ fn Todoadd(add_todo: MultiAction<AddTodo, Result<(), leptos::ServerFnError>>) ->
             <MultiActionForm action=add_todo>
                 <label>
                     "Add a Todo"
-                    <input type="text" name="todo"/>
+                    <input type="text" name="todo" class="form-control"/>
                 </label>
-                <input type="submit" value="Add"/>
+                <input type="submit" value="Add" class="btn btn-outline-success"/>
             </MultiActionForm>
         </div>
     }
