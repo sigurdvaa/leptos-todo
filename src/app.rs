@@ -135,8 +135,12 @@ fn HomePage() -> impl IntoView {
 
     view! {
         <Sidebar />
+        <div class="container mt-3">
         <Todoadd add_todo/>
-        <Todolist todos delete_todo/>
+        </div>
+        <div class="container mt-3">
+            <Todolist todos delete_todo/>
+        </div>
     }
 }
 
@@ -205,11 +209,21 @@ fn ShowTodos(
             // renders each item to a view
             children=move |item| {
                 view! {
-                    <div>{if item.done {"D"} else {"U"}} " " {item.task}
-                        <ActionForm action=delete_todo class="d-inline ps-2">
-                            <input type="hidden" name="id" value={item.id}/>
-                            <input type="submit" value="X" class="btn btn-sm btn-outline-warning"/>
-                        </ActionForm>
+                    <div class="card mt-3">
+                        <div class="card-body d-flex">
+                            <div>
+                                {if item.done {"☑"} else {"☐"}}
+                            </div>
+                            <div class="flex-fill text-start mx-3">
+                                {item.task}
+                            </div>
+                            <div class="ms-auto">
+                                <ActionForm action=delete_todo>
+                                    <input type="hidden" name="id" value={item.id}/>
+                                    <input type="submit" value="X" class="btn btn-sm btn-outline-warning"/>
+                                </ActionForm>
+                            </div>
+                        </div>
                     </div>
                 }
             }
@@ -220,14 +234,12 @@ fn ShowTodos(
 #[component]
 fn Todoadd(add_todo: MultiAction<AddTodo, Result<(), leptos::ServerFnError>>) -> impl IntoView {
     view! {
-        <div>
-            <MultiActionForm action=add_todo>
-                <label>
-                    "Add a Todo"
-                    <input type="text" name="todo" class="form-control"/>
-                </label>
+        <MultiActionForm action=add_todo>
+            <div class="input-group">
+                <span class="input-group-text">Add Todo</span>
+                <input type="text" name="todo" class="form-control" required/>
                 <input type="submit" value="Add" class="btn btn-outline-success"/>
-            </MultiActionForm>
-        </div>
+            </div>
+        </MultiActionForm>
     }
 }
