@@ -31,7 +31,7 @@ cfg_if! {
                 sqlx::query(
                     "CREATE TABLE IF NOT EXISTS todos (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        done BOOLEAN NOT NULL,
+                        done BOOLEAN DEFAULT false,
                         task TEXT NOT NULL
                     );",
                 ).execute(&pool).await?;
@@ -71,10 +71,24 @@ pub async fn add_todo(todo: String) -> Result<(), ServerFnError> {
 }
 
 #[server(DeleteTodo, "/api")]
-pub async fn del_todo(id: u32) -> Result<(), ServerFnError> {
+pub async fn delete_todo(id: u32) -> Result<(), ServerFnError> {
     let pool = db().await?;
 
     match sqlx::query("DELETE FROM todos WHERE id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(e) => Err(ServerFnError::ServerError(e.to_string())),
+    }
+}
+
+#[server(ToggleTodo, "/api")]
+pub async fn toggle_todo(id: u32) -> Result<(), ServerFnError> {
+    let pool = db().await?;
+
+    match sqlx::query("UPDATE todos SET done = (CASE WHEN done = false THEN true ELSE false END) WHERE id = $1")
         .bind(id)
         .execute(&pool)
         .await
@@ -94,6 +108,7 @@ pub fn App() -> impl IntoView {
 
         // Bootstrap
         <Stylesheet href="/css/bootstrap.min.css"/>
+        <Stylesheet href="/css/bootstrap-icons.min.css"/>
         <Script src="/js/bootstrap.bundle.min.js" defer="true"/>
 
         // injects a stylesheet into the document <head>
@@ -124,33 +139,35 @@ pub fn App() -> impl IntoView {
 /// Renders the home page of your application.
 #[component]
 fn HomePage() -> impl IntoView {
-    let add_todo = create_server_multi_action::<AddTodo>();
+    let add_todo = create_server_action::<AddTodo>();
     let delete_todo = create_server_action::<DeleteTodo>();
+    let toggle_todo = create_server_action::<ToggleTodo>();
 
     // list of todos is loaded from the server in reaction to changes
     let todos = create_resource(
-        move || (add_todo.version().get(), delete_todo.version().get()),
+        move || (add_todo.version().get(), delete_todo.version().get(), toggle_todo.version().get()),
         move |_| get_todos(),
     );
 
     view! {
-        <Sidebar />
+        <Topbar />
         <div class="container mt-3">
         <Todoadd add_todo/>
         </div>
         <div class="container mt-3">
-            <Todolist todos delete_todo/>
+            <Todolist todos delete_todo toggle_todo/>
         </div>
     }
 }
 
 #[component]
-fn Sidebar() -> impl IntoView {
+fn Topbar() -> impl IntoView {
     view! {
         <nav class="navbar navbar-expand-lg bg-body-tertiary">
           <div class="container-fluid">
-            <a class="navbar-brand" href="#">Todo</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+            <a class="navbar-brand" href="#"><i class="bi bi-card-checklist text-warning me-1"></i> Todo</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
+                aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
               <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
@@ -162,7 +179,7 @@ fn Sidebar() -> impl IntoView {
                   <a class="nav-link" href="#">Mark All Undone</a>
                 </li>
                 <li class="nav-item">
-                  <a class="nav-link disabled text-danger" aria-disabled="true">Delete All</a>
+                  <a class="nav-link disabled text-muted" aria-disabled="true">Delete All</a>
                 </li>
               </ul>
               <form class="d-flex" role="search">
@@ -177,8 +194,9 @@ fn Sidebar() -> impl IntoView {
 
 #[component]
 fn Todolist(
-    todos: Resource<(usize, usize), Result<Vec<TodoItem>, ServerFnError>>,
+    todos: Resource<(usize, usize, usize), Result<Vec<TodoItem>, ServerFnError>>,
     delete_todo: Action<DeleteTodo, Result<(), leptos::ServerFnError>>,
+    toggle_todo: Action<ToggleTodo, Result<(), leptos::ServerFnError>>,
 ) -> impl IntoView {
     view! {
         <div>
@@ -187,7 +205,7 @@ fn Todolist(
                     None => view! { <p class="text-muted">"No data"</p> }.into_view(),
                     Some(result) => match result {
                         Err(e) => view! { <p class="text-danger">"Error loading: " {e.to_string()}</p> }.into_view(),
-                        Ok(data) => view! { <ShowTodos data delete_todo/> }.into_view(),
+                        Ok(data) => view! { <ShowTodos data delete_todo toggle_todo/> }.into_view(),
                     }
                 }}
             </Transition>
@@ -199,6 +217,7 @@ fn Todolist(
 fn ShowTodos(
     data: Vec<TodoItem>,
     delete_todo: Action<DeleteTodo, Result<(), leptos::ServerFnError>>,
+    toggle_todo: Action<ToggleTodo, Result<(), leptos::ServerFnError>>,
 ) -> impl IntoView {
     view! {
         <For
@@ -208,11 +227,20 @@ fn ShowTodos(
             key=|item| item.id
             // renders each item to a view
             children=move |item| {
+                let toggle_class = format!("btn btn-sm border-0 bi {}",
+                    if item.done {
+                        "bi-check-square-fill btn-outline-success"
+                    } else {
+                        "bi-square btn-outline-warning"
+                    });
                 view! {
                     <div class="card mt-3">
                         <div class="card-body d-flex">
                             <div>
-                                {if item.done {"☑"} else {"☐"}}
+                                <ActionForm action=toggle_todo>
+                                    <input type="hidden" name="id" value={item.id}/>
+                                    <button type="submit" value="" class={toggle_class}/>
+                                </ActionForm>
                             </div>
                             <div class="flex-fill text-start mx-3">
                                 {item.task}
@@ -220,7 +248,7 @@ fn ShowTodos(
                             <div class="ms-auto">
                                 <ActionForm action=delete_todo>
                                     <input type="hidden" name="id" value={item.id}/>
-                                    <input type="submit" value="X" class="btn btn-sm btn-outline-warning"/>
+                                    <button type="submit" value="" class="btn btn-sm border-0 btn-outline-danger bi bi-trash-fill"/>
                                 </ActionForm>
                             </div>
                         </div>
@@ -232,14 +260,14 @@ fn ShowTodos(
 }
 
 #[component]
-fn Todoadd(add_todo: MultiAction<AddTodo, Result<(), leptos::ServerFnError>>) -> impl IntoView {
+fn Todoadd(add_todo: Action<AddTodo, Result<(), leptos::ServerFnError>>) -> impl IntoView {
     view! {
-        <MultiActionForm action=add_todo>
+        <ActionForm action=add_todo>
             <div class="input-group">
                 <span class="input-group-text">Add Todo</span>
                 <input type="text" name="todo" class="form-control" required/>
                 <input type="submit" value="Add" class="btn btn-outline-success"/>
             </div>
-        </MultiActionForm>
+        </ActionForm>
     }
 }
