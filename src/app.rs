@@ -84,12 +84,50 @@ pub async fn delete_todo(id: u32) -> Result<(), ServerFnError> {
     }
 }
 
+#[server(DeleteAll, "/api")]
+pub async fn delete_all() -> Result<(), ServerFnError> {
+    let pool = db().await?;
+
+    match sqlx::query("DELETE FROM todos").execute(&pool).await {
+        Ok(_) => Ok(()),
+        Err(e) => Err(ServerFnError::ServerError(e.to_string())),
+    }
+}
+
 #[server(ToggleTodo, "/api")]
 pub async fn toggle_todo(id: u32) -> Result<(), ServerFnError> {
     let pool = db().await?;
 
-    match sqlx::query("UPDATE todos SET done = (CASE WHEN done = false THEN true ELSE false END) WHERE id = $1")
-        .bind(id)
+    match sqlx::query(
+        "UPDATE todos SET done = (CASE WHEN done = false THEN true ELSE false END) WHERE id = $1",
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    {
+        Ok(_) => Ok(()),
+        Err(e) => Err(ServerFnError::ServerError(e.to_string())),
+    }
+}
+
+#[server(MarkAllDone, "/api")]
+pub async fn mark_all_done() -> Result<(), ServerFnError> {
+    let pool = db().await?;
+
+    match sqlx::query("UPDATE todos SET done = true")
+        .execute(&pool)
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(e) => Err(ServerFnError::ServerError(e.to_string())),
+    }
+}
+
+#[server(MarkAllUndone, "/api")]
+pub async fn mark_all_undone() -> Result<(), ServerFnError> {
+    let pool = db().await?;
+
+    match sqlx::query("UPDATE todos SET done = false")
         .execute(&pool)
         .await
     {
@@ -139,18 +177,30 @@ pub fn App() -> impl IntoView {
 /// Renders the home page of your application.
 #[component]
 fn HomePage() -> impl IntoView {
-    let add_todo = create_server_action::<AddTodo>();
+    let add_todo = create_server_multi_action::<AddTodo>();
     let delete_todo = create_server_action::<DeleteTodo>();
     let toggle_todo = create_server_action::<ToggleTodo>();
+    let mark_all_done = create_server_action::<MarkAllDone>();
+    let mark_all_undone = create_server_action::<MarkAllUndone>();
+    let delete_all = create_server_action::<DeleteAll>();
 
     // list of todos is loaded from the server in reaction to changes
     let todos = create_resource(
-        move || (add_todo.version().get(), delete_todo.version().get(), toggle_todo.version().get()),
+        move || {
+            (
+                add_todo.version().get(),
+                delete_todo.version().get(),
+                toggle_todo.version().get(),
+                mark_all_done.version().get(),
+                mark_all_undone.version().get(),
+                delete_all.version().get(),
+            )
+        },
         move |_| get_todos(),
     );
 
     view! {
-        <Topbar />
+        <Topbar mark_all_done mark_all_undone delete_all/>
         <div class="container mt-3">
         <Todoadd add_todo/>
         </div>
@@ -161,9 +211,13 @@ fn HomePage() -> impl IntoView {
 }
 
 #[component]
-fn Topbar() -> impl IntoView {
+fn Topbar(
+    mark_all_done: Action<MarkAllDone, Result<(), leptos::ServerFnError>>,
+    mark_all_undone: Action<MarkAllUndone, Result<(), leptos::ServerFnError>>,
+    delete_all: Action<DeleteAll, Result<(), leptos::ServerFnError>>,
+) -> impl IntoView {
     view! {
-        <nav class="navbar navbar-expand-lg bg-body-tertiary">
+        <nav class="navbar navbar-expand-lg" style="background-color: #301934;">
           <div class="container-fluid">
             <a class="navbar-brand" href="#"><i class="bi bi-card-checklist text-warning me-1"></i> Todo</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
@@ -173,13 +227,19 @@ fn Topbar() -> impl IntoView {
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
               <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 <li class="nav-item">
-                  <a class="nav-link" aria-current="page" href="#">Mark All Done</a>
+                    <ActionForm action=mark_all_done>
+                        <input type="submit" value="Mark All Done" class="nav-link text-success"/>
+                    </ActionForm>
                 </li>
                 <li class="nav-item">
-                  <a class="nav-link" href="#">Mark All Undone</a>
+                    <ActionForm action=mark_all_undone>
+                        <input type="submit" value="Mark All Undone" class="nav-link text-warning"/>
+                    </ActionForm>
                 </li>
                 <li class="nav-item">
-                  <a class="nav-link disabled text-muted" aria-disabled="true">Delete All</a>
+                    <ActionForm action=delete_all>
+                        <input type="submit" value="Delete All" class="nav-link text-danger"/>
+                    </ActionForm>
                 </li>
               </ul>
               <form class="d-flex" role="search">
@@ -194,7 +254,10 @@ fn Topbar() -> impl IntoView {
 
 #[component]
 fn Todolist(
-    todos: Resource<(usize, usize, usize), Result<Vec<TodoItem>, ServerFnError>>,
+    todos: Resource<
+        (usize, usize, usize, usize, usize, usize),
+        Result<Vec<TodoItem>, ServerFnError>,
+    >,
     delete_todo: Action<DeleteTodo, Result<(), leptos::ServerFnError>>,
     toggle_todo: Action<ToggleTodo, Result<(), leptos::ServerFnError>>,
 ) -> impl IntoView {
@@ -260,14 +323,14 @@ fn ShowTodos(
 }
 
 #[component]
-fn Todoadd(add_todo: Action<AddTodo, Result<(), leptos::ServerFnError>>) -> impl IntoView {
+fn Todoadd(add_todo: MultiAction<AddTodo, Result<(), leptos::ServerFnError>>) -> impl IntoView {
     view! {
-        <ActionForm action=add_todo>
+        <MultiActionForm action=add_todo>
             <div class="input-group">
                 <span class="input-group-text">Add Todo</span>
                 <input type="text" name="todo" class="form-control" required/>
                 <input type="submit" value="Add" class="btn btn-outline-success"/>
             </div>
-        </ActionForm>
+        </MultiActionForm>
     }
 }
