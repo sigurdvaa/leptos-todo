@@ -177,7 +177,7 @@ pub fn App() -> impl IntoView {
 /// Renders the home page of your application.
 #[component]
 fn HomePage() -> impl IntoView {
-    let add_todo = create_server_multi_action::<AddTodo>();
+    let add_todo = create_server_action::<AddTodo>();
     let delete_todo = create_server_action::<DeleteTodo>();
     let toggle_todo = create_server_action::<ToggleTodo>();
     let mark_all_done = create_server_action::<MarkAllDone>();
@@ -323,14 +323,14 @@ fn ShowTodos(
 }
 
 #[component]
-fn Todoadd(add_todo: MultiAction<AddTodo, Result<(), leptos::ServerFnError>>) -> impl IntoView {
+fn Todoadd(add_todo: Action<AddTodo, Result<(), leptos::ServerFnError>>) -> impl IntoView {
     view! {
-        <MultiActionForm action=add_todo>
+        <ActionForm action=add_todo>
             <div class="input-group">
                 <span class="input-group-text">Add Todo</span>
                 <input type="text" name="todo" class="form-control" required/>
                 <input type="submit" value="Add" class="btn btn-outline-success"/>
             </div>
-        </MultiActionForm>
+        </ActionForm>
     }
 }
