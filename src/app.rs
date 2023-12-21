@@ -156,6 +156,8 @@ pub fn App() -> impl IntoView {
         // sets the document title
         <Title text="Todo"/>
 
+        //<Body attr:style="background-color: #200924"/>
+
         // content for this welcome page
         <Router fallback=|| {
             let mut outside_errors = Errors::default();
@@ -200,9 +202,12 @@ fn HomePage() -> impl IntoView {
     );
 
     view! {
-        <Topbar mark_all_done mark_all_undone delete_all/>
+        <Topbar/>
         <div class="container mt-3">
-        <Todoadd add_todo/>
+            <Todoadd add_todo/>
+        </div>
+        <div class="container mt-3">
+            <AllTodosAction mark_all_done mark_all_undone delete_all/>
         </div>
         <div class="container mt-3">
             <Todolist todos delete_todo toggle_todo/>
@@ -211,13 +216,9 @@ fn HomePage() -> impl IntoView {
 }
 
 #[component]
-fn Topbar(
-    mark_all_done: Action<MarkAllDone, Result<(), leptos::ServerFnError>>,
-    mark_all_undone: Action<MarkAllUndone, Result<(), leptos::ServerFnError>>,
-    delete_all: Action<DeleteAll, Result<(), leptos::ServerFnError>>,
-) -> impl IntoView {
+fn Topbar() -> impl IntoView {
     view! {
-        <nav class="navbar navbar-expand-lg" style="background-color: #301934;">
+        <nav class="navbar navbar-expand-md" style="background-color: #301934">
           <div class="container-fluid">
             <a class="navbar-brand" href="#"><i class="bi bi-card-checklist text-warning me-1"></i> Todo</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
@@ -226,25 +227,10 @@ fn Topbar(
             </button>
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
               <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                <li class="nav-item">
-                    <ActionForm action=mark_all_done>
-                        <input type="submit" value="Mark All Done" class="nav-link text-success"/>
-                    </ActionForm>
-                </li>
-                <li class="nav-item">
-                    <ActionForm action=mark_all_undone>
-                        <input type="submit" value="Mark All Undone" class="nav-link text-warning"/>
-                    </ActionForm>
-                </li>
-                <li class="nav-item">
-                    <ActionForm action=delete_all>
-                        <input type="submit" value="Delete All" class="nav-link text-danger"/>
-                    </ActionForm>
-                </li>
               </ul>
               <form class="d-flex" role="search">
                 <input class="form-control me-2" type="search" placeholder="Search" aria-label="Search"/>
-                <button class="btn btn-outline-success" type="submit">Search</button>
+                <button class="btn btn-outline-secondary" type="submit">Search</button>
               </form>
             </div>
           </div>
@@ -297,7 +283,7 @@ fn ShowTodos(
                         "bi-square btn-outline-warning"
                     });
                 view! {
-                    <div class="card mt-3">
+                    <div class="card mt-3" style="background-color: #301934">
                         <div class="card-body d-flex">
                             <div>
                                 <ActionForm action=toggle_todo>
@@ -327,10 +313,51 @@ fn Todoadd(add_todo: Action<AddTodo, Result<(), leptos::ServerFnError>>) -> impl
     view! {
         <ActionForm action=add_todo>
             <div class="input-group">
-                <span class="input-group-text">Add Todo</span>
-                <input type="text" name="todo" class="form-control" required/>
-                <input type="submit" value="Add" class="btn btn-outline-success"/>
+                <div class="form-floating">
+                    <input type="text" name="todo" id="floatingTodo" class="form-control" placeholder="Take out the trash" required/>
+                    <label for="floatingTodo" class="text-muted">Add New Todo</label>
+                </div>
+                <input type="submit" value="+ Add" class="btn btn-outline-success col-lg-1"/>
             </div>
         </ActionForm>
+    }
+}
+
+#[component]
+fn AllTodosAction(
+    mark_all_done: Action<MarkAllDone, Result<(), leptos::ServerFnError>>,
+    mark_all_undone: Action<MarkAllUndone, Result<(), leptos::ServerFnError>>,
+    delete_all: Action<DeleteAll, Result<(), leptos::ServerFnError>>,
+) -> impl IntoView {
+    view! {
+        <div class="d-flex justify-content-center">
+            <ActionForm action=mark_all_done>
+                <input type="submit" value="Mark All Done" class="btn btn-outline-success mx-3"/>
+            </ActionForm>
+            <ActionForm action=mark_all_undone>
+                <input type="submit" value="Mark All Undone" class="btn btn-outline-warning mx-3"/>
+            </ActionForm>
+            <input type="button" value="Delete All" class="btn btn-outline-danger mx-3" data-bs-toggle="modal" data-bs-target="#confirm-delete"/>
+        </div>
+
+        <div class="modal" tabindex="-1" id="confirm-delete">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title text-danger">Delete All</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body text-start">
+                        <p>This will delete all todos, are you sure?</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <ActionForm action=delete_all>
+                            <input type="submit" value="Delete All" class="btn btn-danger" data-bs-dismiss="modal"/>
+                        </ActionForm>
+                    </div>
+                </div>
+            </div>
+        </div>
     }
 }
