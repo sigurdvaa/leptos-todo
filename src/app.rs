@@ -1,13 +1,9 @@
 use crate::error_template::{AppError, ErrorTemplate};
 use cfg_if::cfg_if;
-use leptos::ev::SubmitEvent;
-use leptos::html::Input;
 use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::JsCast;
-use web_sys::HtmlFormElement;
 
 #[cfg_attr(feature = "ssr", derive(sqlx::FromRow))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -160,8 +156,6 @@ pub fn App() -> impl IntoView {
         // sets the document title
         <Title text="Todo"/>
 
-        //<Body attr:style="background-color: #200924"/>
-
         // content for this welcome page
         <Router fallback=|| {
             let mut outside_errors = Errors::default();
@@ -208,10 +202,10 @@ fn HomePage() -> impl IntoView {
     view! {
         <Topbar/>
         <div class="container mt-3">
-            <Todoadd add_todo/>
+            <AllTodosAction mark_all_done mark_all_undone delete_all/>
         </div>
         <div class="container mt-3">
-            <AllTodosAction mark_all_done mark_all_undone delete_all/>
+            <Todoadd add_todo/>
         </div>
         <div class="container mt-3">
             <Todolist todos delete_todo toggle_todo/>
@@ -314,22 +308,24 @@ fn ShowTodos(
 
 #[component]
 fn Todoadd(add_todo: Action<AddTodo, Result<(), leptos::ServerFnError>>) -> impl IntoView {
-    let input_ref = create_node_ref::<Input>();
     view! {
-        <ActionForm action=add_todo on:submit=move |ev: SubmitEvent| {
-            if let Some(input) = input_ref.get() {
-                ev.prevent_default();
-                let value = input.value();
-                let _ = input.prop("value", "");
-                add_todo.dispatch(AddTodo { todo: value.into() });
-            }
-        }>
+        <ActionForm action=add_todo>
             <div class="input-group">
                 <div class="form-floating">
-                    <input type="text" name="todo" id="floatingTodo" class="form-control" placeholder="Take out the trash" required _ref=input_ref/>
-                    <label for="floatingTodo" class="text-muted">Add New Todo</label>
+                    <input type="text" name="todo" id="floatingTodo" class="form-control"
+                        placeholder="Take out the trash" required autofocus
+                        readonly=move || add_todo.pending().get()
+                        prop:value=move || match add_todo.input().get() {
+                            Some(value) => value.todo,
+                            None => "".into(),
+                        }
+                    />
+                    <label for="floatingTodo" class="text-muted">New todo...</label>
                 </div>
-                <input type="submit" value="+ Add" class="btn btn-outline-success col-lg-1"/>
+                <button type="submit" class="btn btn-outline-success col-lg-1" disabled=move || add_todo.pending().get()>
+                    <span hidden=move || add_todo.pending().get()>+ Add</span>
+                    <div hidden=move || !add_todo.pending().get() class="spinner-border spinner-border-sm" role="status"></div>
+                </button>
             </div>
         </ActionForm>
     }
