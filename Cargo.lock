@@ -1210,6 +1210,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

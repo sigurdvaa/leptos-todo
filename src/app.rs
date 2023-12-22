@@ -1,9 +1,13 @@
 use crate::error_template::{AppError, ErrorTemplate};
 use cfg_if::cfg_if;
+use leptos::ev::SubmitEvent;
+use leptos::html::Input;
 use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::JsCast;
+use web_sys::HtmlFormElement;
 
 #[cfg_attr(feature = "ssr", derive(sqlx::FromRow))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -310,11 +314,19 @@ fn ShowTodos(
 
 #[component]
 fn Todoadd(add_todo: Action<AddTodo, Result<(), leptos::ServerFnError>>) -> impl IntoView {
+    let input_ref = create_node_ref::<Input>();
     view! {
-        <ActionForm action=add_todo>
+        <ActionForm action=add_todo on:submit=move |ev: SubmitEvent| {
+            if let Some(input) = input_ref.get() {
+                ev.prevent_default();
+                let value = input.value();
+                let _ = input.prop("value", "");
+                add_todo.dispatch(AddTodo { todo: value.into() });
+            }
+        }>
             <div class="input-group">
                 <div class="form-floating">
-                    <input type="text" name="todo" id="floatingTodo" class="form-control" placeholder="Take out the trash" required/>
+                    <input type="text" name="todo" id="floatingTodo" class="form-control" placeholder="Take out the trash" required _ref=input_ref/>
                     <label for="floatingTodo" class="text-muted">Add New Todo</label>
                 </div>
                 <input type="submit" value="+ Add" class="btn btn-outline-success col-lg-1"/>
@@ -332,10 +344,10 @@ fn AllTodosAction(
     view! {
         <div class="d-flex justify-content-center">
             <ActionForm action=mark_all_done>
-                <input type="submit" value="Mark All Done" class="btn btn-outline-success mx-3"/>
+                <input type="submit" value="All Done" class="btn btn-outline-success mx-3"/>
             </ActionForm>
             <ActionForm action=mark_all_undone>
-                <input type="submit" value="Mark All Undone" class="btn btn-outline-warning mx-3"/>
+                <input type="submit" value="All Undone" class="btn btn-outline-warning mx-3"/>
             </ActionForm>
             <input type="button" value="Delete All" class="btn btn-outline-danger mx-3" data-bs-toggle="modal" data-bs-target="#confirm-delete"/>
         </div>
