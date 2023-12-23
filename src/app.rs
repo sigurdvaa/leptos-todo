@@ -46,7 +46,22 @@ cfg_if! {
 pub async fn get_todos() -> Result<Vec<TodoItem>, ServerFnError> {
     let pool = db().await?;
 
+    // fake API delay
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+
     let todos = sqlx::query_as::<_, TodoItem>("SELECT * FROM todos")
+        .fetch_all(&pool)
+        .await?;
+
+    Ok(todos)
+}
+
+#[server(SearchTodos, "/api")]
+pub async fn search_todos(search: String) -> Result<Vec<TodoItem>, ServerFnError> {
+    let pool = db().await?;
+
+    let todos = sqlx::query_as::<_, TodoItem>("SELECT * FROM todos where task like '%{}%'")
+        .bind(search)
         .fetch_all(&pool)
         .await?;
 
@@ -183,6 +198,7 @@ fn HomePage() -> impl IntoView {
     let mark_all_done = create_server_action::<MarkAllDone>();
     let mark_all_undone = create_server_action::<MarkAllUndone>();
     let delete_all = create_server_action::<DeleteAll>();
+    let search_todos = create_server_action::<SearchTodos>();
 
     // list of todos is loaded from the server in reaction to changes
     let todos = create_resource(
@@ -194,6 +210,7 @@ fn HomePage() -> impl IntoView {
                 mark_all_done.version().get(),
                 mark_all_undone.version().get(),
                 delete_all.version().get(),
+                search_todos.version().get(),
             )
         },
         move |_| get_todos(),
@@ -239,7 +256,7 @@ fn Topbar() -> impl IntoView {
 #[component]
 fn Todolist(
     todos: Resource<
-        (usize, usize, usize, usize, usize, usize),
+        (usize, usize, usize, usize, usize, usize, usize),
         Result<Vec<TodoItem>, ServerFnError>,
     >,
     delete_todo: Action<DeleteTodo, Result<(), leptos::ServerFnError>>,
@@ -247,7 +264,7 @@ fn Todolist(
 ) -> impl IntoView {
     view! {
         <div>
-            <Transition fallback=move || view! { <p class="text-muted">"Loading..."</p> }>
+            <Suspense fallback=move || view! { <p class="text-muted">"Loading..."</p> }>
                 {move || match todos.get() {
                     None => view! { <p class="text-muted">"No data"</p> }.into_view(),
                     Some(result) => match result {
@@ -255,7 +272,7 @@ fn Todolist(
                         Ok(data) => view! { <ShowTodos data delete_todo toggle_todo/> }.into_view(),
                     }
                 }}
-            </Transition>
+            </Suspense>
         </div>
     }
 }
