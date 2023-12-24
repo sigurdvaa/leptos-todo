@@ -197,7 +197,6 @@ fn HomePage() -> impl IntoView {
     let mark_all_done = create_server_action::<MarkAllDone>();
     let mark_all_undone = create_server_action::<MarkAllUndone>();
     let delete_all = create_server_action::<DeleteAll>();
-
     let (search, set_search) = create_signal("".to_string());
 
     // list of todos is loaded from the server in reaction to changes
@@ -209,7 +208,7 @@ fn HomePage() -> impl IntoView {
             <AllTodosAction mark_all_done mark_all_undone delete_all/>
         </div>
         <div class="container mt-3">
-            <Todoadd add_todo/>
+            <Todoadd add_todo />
         </div>
         <div class="container mt-3">
             <Todolist todos delete_todo toggle_todo/>
@@ -221,23 +220,28 @@ fn HomePage() -> impl IntoView {
 fn Topbar(set_search: WriteSignal<String>) -> impl IntoView {
     view! {
         <nav class="navbar navbar-expand-md" style="background-color: #301934">
-          <div class="container-fluid">
-            <a class="navbar-brand" href="#"><i class="bi bi-card-checklist text-warning me-1"></i> Todo</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
-                aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
-              <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarSupportedContent">
-              <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-              </ul>
-              <form class="d-flex" role="search">
-                <input class="form-control me-2" type="search" placeholder="Search" aria-label="Search"
-                    on:change=move |ev| set_search.set(event_target_value(&ev))
-                />
-                <button class="btn btn-outline-secondary" type="submit">Search</button>
-              </form>
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#"><i class="bi bi-card-checklist text-warning me-1"></i> Todo</a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
+                    aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                    <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    </ul>
+                    <div class="d-flex" role="search">
+                        <div class="input-group flex-nowrap">
+                            <span class="input-group-text" id="addon-wrapping">
+                               <i class="bi bi-search"></i>
+                            </span>
+                            <input class="form-control me-2" type="search" placeholder="Search Todos" aria-label="Search"
+                                prop:value=""
+                                on:change=move |ev| set_search.set(event_target_value(&ev))
+                            />
+                        </div>
+                    </div>
+                </div>
             </div>
-          </div>
         </nav>
     }
 }
