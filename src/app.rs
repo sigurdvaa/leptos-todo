@@ -43,27 +43,26 @@ cfg_if! {
 }
 
 #[server(GetTodos, "/api")]
-pub async fn get_todos() -> Result<Vec<TodoItem>, ServerFnError> {
+pub async fn get_todos(search: String) -> Result<Vec<TodoItem>, ServerFnError> {
     let pool = db().await?;
 
     // fake API delay
     std::thread::sleep(std::time::Duration::from_millis(1000));
 
-    let todos = sqlx::query_as::<_, TodoItem>("SELECT * FROM todos")
-        .fetch_all(&pool)
-        .await?;
-
-    Ok(todos)
-}
-
-#[server(SearchTodos, "/api")]
-pub async fn search_todos(search: String) -> Result<Vec<TodoItem>, ServerFnError> {
-    let pool = db().await?;
-
-    let todos = sqlx::query_as::<_, TodoItem>("SELECT * FROM todos where task like '%{}%'")
-        .bind(search)
-        .fetch_all(&pool)
-        .await?;
+    let todos = match search.as_str() {
+        "" => {
+            sqlx::query_as::<_, TodoItem>("SELECT * FROM todos")
+                .fetch_all(&pool)
+                .await?
+        }
+        _ => {
+            let search = format!("%{search}%");
+            sqlx::query_as::<_, TodoItem>("SELECT * FROM todos WHERE task LIKE $1")
+                .bind(search)
+                .fetch_all(&pool)
+                .await?
+        }
+    };
 
     Ok(todos)
 }
@@ -198,26 +197,14 @@ fn HomePage() -> impl IntoView {
     let mark_all_done = create_server_action::<MarkAllDone>();
     let mark_all_undone = create_server_action::<MarkAllUndone>();
     let delete_all = create_server_action::<DeleteAll>();
-    let search_todos = create_server_action::<SearchTodos>();
+
+    let (search, set_search) = create_signal("".to_string());
 
     // list of todos is loaded from the server in reaction to changes
-    let todos = create_resource(
-        move || {
-            (
-                add_todo.version().get(),
-                delete_todo.version().get(),
-                toggle_todo.version().get(),
-                mark_all_done.version().get(),
-                mark_all_undone.version().get(),
-                delete_all.version().get(),
-                search_todos.version().get(),
-            )
-        },
-        move |_| get_todos(),
-    );
+    let todos = create_resource(move || search.get(), get_todos);
 
     view! {
-        <Topbar/>
+        <Topbar set_search/>
         <div class="container mt-3">
             <AllTodosAction mark_all_done mark_all_undone delete_all/>
         </div>
@@ -231,7 +218,7 @@ fn HomePage() -> impl IntoView {
 }
 
 #[component]
-fn Topbar() -> impl IntoView {
+fn Topbar(set_search: WriteSignal<String>) -> impl IntoView {
     view! {
         <nav class="navbar navbar-expand-md" style="background-color: #301934">
           <div class="container-fluid">
@@ -244,7 +231,9 @@ fn Topbar() -> impl IntoView {
               <ul class="navbar-nav me-auto mb-2 mb-lg-0">
               </ul>
               <form class="d-flex" role="search">
-                <input class="form-control me-2" type="search" placeholder="Search" aria-label="Search"/>
+                <input class="form-control me-2" type="search" placeholder="Search" aria-label="Search"
+                    on:change=move |ev| set_search.set(event_target_value(&ev))
+                />
                 <button class="btn btn-outline-secondary" type="submit">Search</button>
               </form>
             </div>
@@ -255,10 +244,7 @@ fn Topbar() -> impl IntoView {
 
 #[component]
 fn Todolist(
-    todos: Resource<
-        (usize, usize, usize, usize, usize, usize, usize),
-        Result<Vec<TodoItem>, ServerFnError>,
-    >,
+    todos: Resource<String, Result<Vec<TodoItem>, ServerFnError>>,
     delete_todo: Action<DeleteTodo, Result<(), leptos::ServerFnError>>,
     toggle_todo: Action<ToggleTodo, Result<(), leptos::ServerFnError>>,
 ) -> impl IntoView {
