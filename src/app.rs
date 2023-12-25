@@ -43,26 +43,15 @@ cfg_if! {
 }
 
 #[server(GetTodos, "/api")]
-pub async fn get_todos(search: String) -> Result<Vec<TodoItem>, ServerFnError> {
+pub async fn get_todos() -> Result<Vec<TodoItem>, ServerFnError> {
     let pool = db().await?;
 
     // fake API delay
     std::thread::sleep(std::time::Duration::from_millis(1000));
 
-    let todos = match search.as_str() {
-        "" => {
-            sqlx::query_as::<_, TodoItem>("SELECT * FROM todos")
-                .fetch_all(&pool)
-                .await?
-        }
-        _ => {
-            let search = format!("%{search}%");
-            sqlx::query_as::<_, TodoItem>("SELECT * FROM todos WHERE task LIKE $1")
-                .bind(search)
-                .fetch_all(&pool)
-                .await?
-        }
-    };
+    let todos = sqlx::query_as::<_, TodoItem>("SELECT * FROM todos")
+        .fetch_all(&pool)
+        .await?;
 
     Ok(todos)
 }
@@ -87,7 +76,7 @@ pub async fn add_todo(todo: String) -> Result<TodoItem, ServerFnError> {
 }
 
 #[server(DeleteTodo, "/api")]
-pub async fn delete_todo(id: u32) -> Result<(), ServerFnError> {
+pub async fn delete_todo(id: u32) -> Result<u32, ServerFnError> {
     let pool = db().await?;
 
     match sqlx::query("DELETE FROM todos WHERE id = $1")
@@ -95,7 +84,7 @@ pub async fn delete_todo(id: u32) -> Result<(), ServerFnError> {
         .execute(&pool)
         .await
     {
-        Ok(_) => Ok(()),
+        Ok(_) => Ok(id),
         Err(e) => Err(ServerFnError::ServerError(e.to_string())),
     }
 }
@@ -193,70 +182,101 @@ pub fn App() -> impl IntoView {
 /// Renders the home page of your application.
 #[component]
 fn HomePage() -> impl IntoView {
-    // get existing todos from server
-    let existing_todos = create_resource(|| (), |_| async move { get_todos("".to_string()).await });
+    // filter input
+    let filter = create_rw_signal("".to_string());
 
-    // Submit changes to server
-    let add_todo = create_server_action::<AddTodo>();
-    let delete_todo = create_server_action::<DeleteTodo>();
-    let toggle_todo = create_server_action::<ToggleTodo>();
-    let mark_all_done = create_server_action::<MarkAllDone>();
-    let mark_all_undone = create_server_action::<MarkAllUndone>();
-    let delete_all = create_server_action::<DeleteAll>();
-
-    // Local interaction
-    let (search, set_search) = create_signal("".to_string());
-
-    // list of todos is loaded from the server in reaction to changes
-    //let todos = create_resource(move || search.get(), get_todos);
-
-    // Merge todos from changes and interactions into one signal
-    let (todos, set_todos) = create_signal::<Vec<RwSignal<TodoItem>>>(vec![]);
+    // get existing and create inital todo list
+    let existing_todos = create_resource(|| (), |_| async move { get_todos().await });
+    let todos = create_rw_signal::<Vec<(u32, RwSignal<TodoItem>)>>(vec![]);
     create_effect(move |_| {
         if let Some(Ok(exiting_todos)) = existing_todos.get() {
-            set_todos.update(|todos| {
-                todos.extend(exiting_todos.into_iter().map(|todo| create_rw_signal(todo)))
+            logging::log!("running effect for existing_todo");
+            todos.update(|todos| {
+                todos.extend(
+                    exiting_todos
+                        .into_iter()
+                        .map(|todo| (todo.id, create_rw_signal(todo))),
+                )
             });
         }
     });
+
+    // add
+    let add_todo = create_server_action::<AddTodo>();
     create_effect(move |_| {
+        logging::log!("running effect for add_todo");
         if let Some(Ok(todo)) = add_todo.value().get() {
-            set_todos.update(|todos| todos.push(create_rw_signal(todo)));
+            let todo = (todo.id, create_rw_signal(todo));
+            todos.update(|todos| todos.push(todo));
         };
     });
+
+    // toggle
+    let toggle_todo = create_server_action::<ToggleTodo>();
     create_effect(move |_| {
+        logging::log!("running effect for toggle_todo");
         if let Some(Ok(toggled)) = toggle_todo.value().get() {
-            set_todos.update(|todos| {
-                for todo in todos {
-                    if todo.get().id == toggled.id {
+            todos.with_untracked(|todos| {
+                for (id, todo) in todos.iter() {
+                    if *id == toggled.id {
                         todo.set(toggled);
-                        logging::log!("updated todo");
                         break;
                     }
                 }
             });
         };
     });
-    /*
-        let todos = Signal::derive(move || {
-            if let Some(Ok(exiting_todos)) = exiting_todos.get() {
-                set_todos.update(|todos| {
-                    todos.extend(exiting_todos.into_iter().map(|todo| create_rw_signal(todo)))
-                });
-            }
 
-            match add_todo.value().get() {
-                Some(Ok(todo)) => set_todos.update(|todos| todos.push(create_rw_signal(todo))),
-                _ => (),
-            };
-            get_todos()
-                .into_iter()
-                .filter(|todo: &RwSignal<TodoItem>| todo.get().task.contains(&search()))
-                .collect::<Vec<RwSignal<TodoItem>>>()
-        });
-    */
+    // delete
+    let delete_todo = create_server_action::<DeleteTodo>();
+    create_effect(move |_| {
+        logging::log!("running effect for delete_todo");
+        if let Some(Ok(del_id)) = delete_todo.value().get() {
+            todos.update(|todos| {
+                if let Some(index) = todos.iter().position(|(id, _)| *id == del_id) {
+                    todos.remove(index);
+                }
+            });
+        };
+    });
+
+    // all done
+    let mark_all_done = create_server_action::<MarkAllDone>();
+    create_effect(move |_| {
+        logging::log!("running effect for mark_all_done");
+        if let Some(Ok(())) = mark_all_done.value().get() {
+            todos.with_untracked(|todos| {
+                for (_, todo) in todos.iter() {
+                    todo.update(|todo| todo.done = true);
+                }
+            });
+        };
+    });
+
+    // all undone
+    let mark_all_undone = create_server_action::<MarkAllUndone>();
+    create_effect(move |_| {
+        logging::log!("running effect for mark_all_undone");
+        if let Some(Ok(())) = mark_all_undone.value().get() {
+            todos.with_untracked(|todos| {
+                for (_, todo) in todos.iter() {
+                    todo.update(|todo| todo.done = false);
+                }
+            });
+        };
+    });
+
+    // all delete
+    let delete_all = create_server_action::<DeleteAll>();
+    create_effect(move |_| {
+        logging::log!("running effect for delete_all");
+        if let Some(Ok(())) = delete_all.value().get() {
+            todos.set(vec![]);
+        };
+    });
+
     view! {
-        <Topbar set_search/>
+        <Topbar filter/>
         <div class="container mt-3">
             <AllTodosAction mark_all_done mark_all_undone delete_all/>
         </div>
@@ -264,13 +284,19 @@ fn HomePage() -> impl IntoView {
             <Todoadd add_todo />
         </div>
         <div class="container mt-3">
-            <Todolist todos delete_todo toggle_todo/>
+            /*
+            {move || { match todos.with(|todos| todos.is_empty()) {
+                true => view! {<p class="text-muted">No tasks!</p>}.into_view(),
+                false => view! {<Todolist todos delete_todo toggle_todo filter/>}.into_view(),
+            }}}
+            */
+            <Todolist todos delete_todo toggle_todo filter/>
         </div>
     }
 }
 
 #[component]
-fn Topbar(set_search: WriteSignal<String>) -> impl IntoView {
+fn Topbar(filter: RwSignal<String>) -> impl IntoView {
     view! {
         <nav class="navbar navbar-expand-md" style="background-color: #301934">
             <div class="container-fluid">
@@ -287,9 +313,9 @@ fn Topbar(set_search: WriteSignal<String>) -> impl IntoView {
                             <span class="input-group-text" id="addon-wrapping">
                                <i class="bi bi-search"></i>
                             </span>
-                            <input class="form-control me-2" type="search" placeholder="Search Todos" aria-label="Search"
+                            <input class="form-control me-2" type="search" placeholder="Filter"
                                 prop:value=""
-                                on:change=move |ev| set_search.set(event_target_value(&ev))
+                                on:input=move |ev| filter.set(event_target_value(&ev))
                             />
                         </div>
                     </div>
@@ -301,65 +327,47 @@ fn Topbar(set_search: WriteSignal<String>) -> impl IntoView {
 
 #[component]
 fn Todolist(
-    //todos: Resource<String, Result<Vec<TodoItem>, ServerFnError>>,
-    todos: ReadSignal<Vec<RwSignal<TodoItem>>>,
-    delete_todo: Action<DeleteTodo, Result<(), leptos::ServerFnError>>,
+    todos: RwSignal<Vec<(u32, RwSignal<TodoItem>)>>,
+    delete_todo: Action<DeleteTodo, Result<u32, leptos::ServerFnError>>,
     toggle_todo: Action<ToggleTodo, Result<TodoItem, leptos::ServerFnError>>,
-) -> impl IntoView {
-    view! {
-        <div>
-            <Suspense fallback=move || view! { <p class="text-muted">"Loading..."</p> }>
-            /*
-                {move || match todos() {
-                    None => view! { <p class="text-muted">"No data"</p> }.into_view(),
-                    Some(result) => match result {
-                        Err(e) => view! { <p class="text-danger">"Error loading: " {e.to_string()}</p> }.into_view(),
-                        Ok(data) => view! { <ShowTodos data delete_todo toggle_todo/> }.into_view(),
-                    }
-                }}
-            */
-            <ShowTodos todos delete_todo toggle_todo/>
-            </Suspense>
-        </div>
-    }
-}
-
-#[component]
-fn ShowTodos(
-    todos: ReadSignal<Vec<RwSignal<TodoItem>>>,
-    delete_todo: Action<DeleteTodo, Result<(), leptos::ServerFnError>>,
-    toggle_todo: Action<ToggleTodo, Result<TodoItem, leptos::ServerFnError>>,
+    filter: RwSignal<String>,
 ) -> impl IntoView {
     view! {
         <For
-            // a function that returns the items we're iterating over; a signal is fine
             each=move || todos.get()
-            // a unique key for each item
-            key=|item| item.get().id
-            // renders each item to a view
-            children=move |item| {
-                let item = item.get();
-                let toggle_class = format!("btn btn-sm border-0 bi {}",
-                    if item.done {
-                        "bi-check-square-fill btn-outline-success"
-                    } else {
-                        "bi-square btn-outline-warning"
-                    });
+            key=|(id, _)| *id
+            children=move |(id, item)| {
+                let card_class = move || {
+                    let mut class = "card mt-3".to_string();
+                    if !item.with(|item| item.task.contains(&filter.get())) {
+                        class.push_str(" visually-hidden");
+                    }
+                    class
+                };
+                let toggle_class = move || {
+                    format!("btn btn-sm border-0 bi {}",
+                        if item.with(|item| item.done) {
+                            "bi-check-square-fill btn-outline-success"
+                        } else {
+                            "bi-square btn-outline-warning"
+                        }
+                    )
+                };
                 view! {
-                    <div class="card mt-3" style="background-color: #301934">
+                    <div class={move || card_class()} style="background-color: #301934">
                         <div class="card-body d-flex">
                             <div>
                                 <ActionForm action=toggle_todo>
-                                    <input type="hidden" name="id" value={item.id}/>
-                                    <button type="submit" value="" class={toggle_class}/>
+                                    <input type="hidden" name="id" value={move || id}/>
+                                    <button type="submit" value="" class={move || toggle_class()}/>
                                 </ActionForm>
                             </div>
                             <div class="flex-fill text-start mx-3">
-                                {item.task}
+                                {move || item.get().task}
                             </div>
                             <div class="ms-auto">
                                 <ActionForm action=delete_todo>
-                                    <input type="hidden" name="id" value={item.id}/>
+                                    <input type="hidden" name="id" value={move || id}/>
                                     <button type="submit" value="" class="btn btn-sm border-0 btn-outline-danger bi bi-trash-fill"/>
                                 </ActionForm>
                             </div>
@@ -376,8 +384,9 @@ fn Todoadd(add_todo: Action<AddTodo, Result<TodoItem, leptos::ServerFnError>>) -
     view! {
         <ActionForm action=add_todo>
             <div class="input-group">
-                <div class="form-floating">
+                <div class="form-floating" class:placeholder-glow=move || add_todo.pending().get()>
                     <input type="text" name="todo" id="floatingTodo" class="form-control"
+                        class:placeholder=move || add_todo.pending().get()
                         placeholder="Take out the trash" required autofocus
                         readonly=move || add_todo.pending().get()
                         prop:value=move || match add_todo.input().get() {
