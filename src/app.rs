@@ -47,7 +47,7 @@ pub async fn get_todos() -> Result<Vec<TodoItem>, ServerFnError> {
     let pool = db().await?;
 
     // fake API delay
-    std::thread::sleep(std::time::Duration::from_millis(1000));
+    // std::thread::sleep(std::time::Duration::from_millis(1000));
 
     let todos = sqlx::query_as::<_, TodoItem>("SELECT * FROM todos")
         .fetch_all(&pool)
@@ -61,7 +61,7 @@ pub async fn add_todo(todo: String) -> Result<TodoItem, ServerFnError> {
     let pool = db().await?;
 
     // fake API delay
-    std::thread::sleep(std::time::Duration::from_millis(1000));
+    // std::thread::sleep(std::time::Duration::from_millis(1000));
 
     match sqlx::query_as::<_, TodoItem>(
         "INSERT INTO todos (task, done) VALUES ($1, false) RETURNING *",
@@ -206,8 +206,7 @@ fn HomePage() -> impl IntoView {
     create_effect(move |_| {
         logging::log!("running effect for add_todo");
         if let Some(Ok(todo)) = add_todo.value().get() {
-            let todo = (todo.id, create_rw_signal(todo));
-            todos.update(|todos| todos.push(todo));
+            todos.update(|todos| todos.push((todo.id, create_rw_signal(todo))));
         };
     });
 
