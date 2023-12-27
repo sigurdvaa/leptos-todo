@@ -47,7 +47,7 @@ pub async fn get_todos() -> Result<Vec<TodoItem>, ServerFnError> {
     let pool = db().await?;
 
     // fake API delay
-    // std::thread::sleep(std::time::Duration::from_millis(1000));
+    std::thread::sleep(std::time::Duration::from_millis(1000));
 
     let todos = sqlx::query_as::<_, TodoItem>("SELECT * FROM todos")
         .fetch_all(&pool)
@@ -61,7 +61,7 @@ pub async fn add_todo(todo: String) -> Result<TodoItem, ServerFnError> {
     let pool = db().await?;
 
     // fake API delay
-    // std::thread::sleep(std::time::Duration::from_millis(1000));
+    std::thread::sleep(std::time::Duration::from_millis(1000));
 
     match sqlx::query_as::<_, TodoItem>(
         "INSERT INTO todos (task, done) VALUES (?, false) RETURNING *",
@@ -201,7 +201,7 @@ fn HomePage() -> impl IntoView {
                     existing_todos
                         .into_iter()
                         .map(|todo| with_owner(owner, || create_rw_signal(todo))),
-                )
+                );
             });
         }
     });
@@ -211,7 +211,7 @@ fn HomePage() -> impl IntoView {
     create_effect(move |_| {
         logging::log!("running effect for add_todo");
         if let Some(Ok(todo)) = add_todo.value().get() {
-            todos.update(|todos| todos.push(with_owner(todos_owner, || create_rw_signal(todo))));
+            todos.update(|todos| todos.push(with_owner(owner, || create_rw_signal(todo))));
         };
     });
 
@@ -222,7 +222,7 @@ fn HomePage() -> impl IntoView {
         if let Some(Ok(id)) = toggle_todo.value().get() {
             todos.with_untracked(|todos| {
                 for todo in todos.iter() {
-                    if todo.with(|todo| todo.id == id) {
+                    if todo.with_untracked(|todo| todo.id == id) {
                         todo.update(|todo| todo.done = !todo.done);
                         break;
                     }
@@ -235,15 +235,17 @@ fn HomePage() -> impl IntoView {
     let delete_todo = create_server_action::<DeleteTodo>();
     create_effect(move |_| {
         logging::log!("running effect for delete_todo");
-        if let Some(Ok(del_id)) = delete_todo.value().get() {
-            if let Some(idx) = todos
-                .iter()
-                .position(|todo| todo.with(|todo| todo.id == id))
-            {
-                todos[idx].dispose();
-                todos.remove(idx);
-            }
-        };
+        if let Some(Ok(id)) = delete_todo.value().get() {
+            todos.update(|todos| {
+                if let Some(index) = todos
+                    .iter()
+                    .position(|todo| todo.with_untracked(|todo| todo.id == id))
+                {
+                    todos[index].dispose();
+                    todos.remove(index);
+                }
+            });
+        }
     });
 
     // all done
@@ -277,8 +279,10 @@ fn HomePage() -> impl IntoView {
     create_effect(move |_| {
         logging::log!("running effect for delete_all");
         if let Some(Ok(())) = delete_all.value().get() {
-            // TODO: dispose signals - sig.dispose()
-            todos.update(|todos| todos.clear());
+            todos.update(|todos| {
+                todos.iter().for_each(|todo| todo.dispose());
+                todos.clear();
+            });
         };
     });
 
@@ -288,14 +292,16 @@ fn HomePage() -> impl IntoView {
             <AllTodosAction mark_all_done mark_all_undone delete_all/>
         </div>
         <div class="container mt-3">
-            <Todoadd add_todo />
+            <Todoadd add_todo get_todos/>
         </div>
         <div class="container mt-3">
-            {move || match todos.with(|todos| todos.is_empty()) {
-                true => view! {<p class="text-muted">No tasks!</p>}.into_view(),
-                false => view! {<Todolist todos delete_todo toggle_todo filter/>}.into_view(),
+            {move || match get_todos.pending().get() {
+                true => view! {<p class="text-muted">Loading...</p>}.into_view(),
+                false => {move || match todos.with(|todos| todos.is_empty()) {
+                    true => view! {<p class="text-muted">No tasks!</p>}.into_view(),
+                    false => view! {<Todolist todos delete_todo toggle_todo filter/>}.into_view(),
+                }}.into_view()
             }}
-            // <Todolist todos delete_todo toggle_todo filter/>
         </div>
     }
 }
@@ -356,7 +362,7 @@ fn Todolist(
     };
     view! {<For
         each=todos
-        key=|todo| todo.with(|todo| todo.id)
+        key=|todo| todo.with_untracked(|todo| todo.id)
         children=move |todo| {
             view! {
                 <div class={move || card_class(todo)} style="background-color: #301934">
@@ -384,7 +390,10 @@ fn Todolist(
 }
 
 #[component]
-fn Todoadd(add_todo: Action<AddTodo, Result<TodoItem, leptos::ServerFnError>>) -> impl IntoView {
+fn Todoadd(
+    add_todo: Action<AddTodo, Result<TodoItem, leptos::ServerFnError>>,
+    get_todos: Action<GetTodos, Result<Vec<TodoItem>, leptos::ServerFnError>>,
+) -> impl IntoView {
     view! {
         <ActionForm action=add_todo>
             <div class="input-group">
@@ -393,6 +402,7 @@ fn Todoadd(add_todo: Action<AddTodo, Result<TodoItem, leptos::ServerFnError>>) -
                         class:placeholder=move || add_todo.pending().get()
                         placeholder="Take out the trash" required autofocus
                         readonly=move || add_todo.pending().get()
+                        disabled=move || get_todos.pending().get()
                         prop:value=move || match add_todo.input().get() {
                             Some(value) => value.todo,
                             None => "".into(),
