@@ -186,6 +186,7 @@ fn HomePage() -> impl IntoView {
     let filter = create_rw_signal(String::new());
 
     // list of todos
+    let todos_owner = Owner::current().unwrap();
     let todos = create_rw_signal::<Vec<RwSignal<TodoItem>>>(vec![]);
 
     // get existing and create inital todo list
@@ -196,11 +197,13 @@ fn HomePage() -> impl IntoView {
         logging::log!("running effect for get_todos");
         if let Some(Ok(existing_todos)) = get_todos.value().get() {
             todos.update(|todos| {
-                todos.extend(
-                    existing_todos
-                        .into_iter()
-                        .map(|todo| create_rw_signal(todo)),
-                )
+                with_owner(todos_owner, || {
+                    todos.extend(
+                        existing_todos
+                            .into_iter()
+                            .map(|todo| create_rw_signal(todo)),
+                    )
+                })
             });
         }
     });
@@ -210,7 +213,7 @@ fn HomePage() -> impl IntoView {
     create_effect(move |_| {
         logging::log!("running effect for add_todo");
         if let Some(Ok(todo)) = add_todo.value().get() {
-            todos.update(|todos| todos.push(create_rw_signal(todo)));
+            todos.update(|todos| with_owner(todos_owner, || todos.push(create_rw_signal(todo))));
         };
     });
 
@@ -235,6 +238,7 @@ fn HomePage() -> impl IntoView {
     create_effect(move |_| {
         logging::log!("running effect for delete_todo");
         if let Some(Ok(del_id)) = delete_todo.value().get() {
+            // TODO: dispose signal - sig.dispose()
             todos.update(|todos| todos.retain(|todo| todo.with(|todo| todo.id != del_id)));
         };
     });
@@ -270,6 +274,7 @@ fn HomePage() -> impl IntoView {
     create_effect(move |_| {
         logging::log!("running effect for delete_all");
         if let Some(Ok(())) = delete_all.value().get() {
+            // TODO: dispose signals - sig.dispose()
             todos.update(|todos| todos.clear());
         };
     });
