@@ -186,7 +186,18 @@ fn HomePage() -> impl IntoView {
     let filter = create_rw_signal(String::new());
 
     // list of todos
-    let todos = create_rw_signal::<Vec<(u32, RwSignal<TodoItem>)>>(vec![]);
+    let todos_list = create_rw_signal::<Vec<TodoItem>>(vec![]);
+
+    /*
+    let todos_list = create_memo(move |prev| {
+      //create list from resource signal
+      // join two lists? maintain signal?
+    });
+
+    let todos = create_memo(move |prev| {
+        todos_list().iter().map(|todo|create_rw_signal(todo))
+    });
+    */
 
     // get existing and create inital todo list
     // let existing_todos = create_resource(|| (), |_| async move { get_todos().await });
@@ -195,13 +206,7 @@ fn HomePage() -> impl IntoView {
     create_effect(move |_| {
         logging::log!("running effect for get_todos");
         if let Some(Ok(existing_todos)) = get_todos.value().get() {
-            todos.update(|todos| {
-                todos.extend(
-                    existing_todos
-                        .into_iter()
-                        .map(|todo| (todo.id, create_rw_signal(todo))),
-                )
-            });
+            todos.update(|todos| todos.extend(existing_todos));
         }
     });
 
@@ -210,7 +215,7 @@ fn HomePage() -> impl IntoView {
     create_effect(move |_| {
         logging::log!("running effect for add_todo");
         if let Some(Ok(todo)) = add_todo.value().get() {
-            todos.update(|todos| todos.push((todo.id, create_rw_signal(todo))));
+            todos.update(|todos| todos.push(todo));
         };
     });
 
