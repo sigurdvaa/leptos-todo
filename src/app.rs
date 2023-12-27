@@ -186,7 +186,7 @@ fn HomePage() -> impl IntoView {
     let filter = create_rw_signal(String::new());
 
     // list of todos
-    let todos = create_rw_signal::<Vec<RwSignal<TodoItem>>>(vec![]);
+    let todos = create_rw_signal::<Vec<(u32, RwSignal<TodoItem>)>>(vec![]);
 
     // get existing and create inital todo list
     // let existing_todos = create_resource(|| (), |_| async move { get_todos().await });
@@ -199,7 +199,7 @@ fn HomePage() -> impl IntoView {
                 todos.extend(
                     existing_todos
                         .into_iter()
-                        .map(|todo| create_rw_signal(todo)),
+                        .map(|todo| (todo.id, create_rw_signal(todo))),
                 )
             });
         }
@@ -210,7 +210,7 @@ fn HomePage() -> impl IntoView {
     create_effect(move |_| {
         logging::log!("running effect for add_todo");
         if let Some(Ok(todo)) = add_todo.value().get() {
-            todos.update(|todos| todos.push(create_rw_signal(todo)));
+            todos.update(|todos| todos.push((todo.id, create_rw_signal(todo))));
         };
     });
 
@@ -220,8 +220,8 @@ fn HomePage() -> impl IntoView {
         logging::log!("running effect for toggle_todo");
         if let Some(Ok(toggled_id)) = toggle_todo.value().get() {
             todos.with_untracked(|todos| {
-                for todo in todos.iter() {
-                    if todo.with_untracked(|todo| todo.id == toggled_id) {
+                for (id, todo) in todos.iter() {
+                    if *id == toggled_id {
                         todo.update(|todo| todo.done = !todo.done);
                         break;
                     }
@@ -235,8 +235,7 @@ fn HomePage() -> impl IntoView {
     create_effect(move |_| {
         logging::log!("running effect for delete_todo");
         if let Some(Ok(del_id)) = delete_todo.value().get() {
-            todos
-                .update(|todos| todos.retain(|todo| todo.with_untracked(|todo| todo.id != del_id)));
+            todos.update(|todos| todos.retain(|(id, _)| *id != del_id));
         };
     });
 
@@ -248,7 +247,7 @@ fn HomePage() -> impl IntoView {
             todos.with_untracked(|todos| {
                 todos
                     .iter()
-                    .for_each(|todo| todo.update(|todo| todo.done = true))
+                    .for_each(|(_, todo)| todo.update(|todo| todo.done = true))
             });
         };
     });
@@ -261,7 +260,7 @@ fn HomePage() -> impl IntoView {
             todos.with_untracked(|todos| {
                 todos
                     .iter()
-                    .for_each(|todo| todo.update(|todo| todo.done = false))
+                    .for_each(|(_, todo)| todo.update(|todo| todo.done = false))
             });
         };
     });
@@ -327,7 +326,7 @@ fn Topbar(filter: RwSignal<String>) -> impl IntoView {
 
 #[component]
 fn Todolist(
-    todos: RwSignal<Vec<RwSignal<TodoItem>>>,
+    todos: RwSignal<Vec<(u32, RwSignal<TodoItem>)>>,
     delete_todo: Action<DeleteTodo, Result<u32, leptos::ServerFnError>>,
     toggle_todo: Action<ToggleTodo, Result<u32, leptos::ServerFnError>>,
     filter: RwSignal<String>,
@@ -351,14 +350,14 @@ fn Todolist(
     };
     view! {<For
         each=todos
-        key=|todo| todo.with(|todo| todo.id)
-        children=move |todo| {
+        key=|(id, _)| *id
+        children=move |(id, todo)| {
             view! {
                 <div class={move || card_class(todo)} style="background-color: #301934">
                     <div class="card-body d-flex">
                         <div>
                             <ActionForm action=toggle_todo>
-                                <input type="hidden" name="id" value={move || todo.with(|todo| todo.id)}/>
+                                <input type="hidden" name="id" value={id}/>
                                 <button type="submit" value="" class={move || toggle_class(todo)}/>
                             </ActionForm>
                         </div>
@@ -367,7 +366,7 @@ fn Todolist(
                         </div>
                         <div class="ms-auto">
                             <ActionForm action=delete_todo>
-                                <input type="hidden" name="id" value={move || todo.with(|todo| todo.id)}/>
+                                <input type="hidden" name="id" value={id}/>
                                 <button type="submit" value="" class="btn btn-sm border-0 btn-outline-danger bi bi-trash-fill"/>
                             </ActionForm>
                         </div>
