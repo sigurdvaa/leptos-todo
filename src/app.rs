@@ -186,18 +186,7 @@ fn HomePage() -> impl IntoView {
     let filter = create_rw_signal(String::new());
 
     // list of todos
-    let todos_list = create_rw_signal::<Vec<TodoItem>>(vec![]);
-
-    /*
-    let todos_list = create_memo(move |prev| {
-      //create list from resource signal
-      // join two lists? maintain signal?
-    });
-
-    let todos = create_memo(move |prev| {
-        todos_list().iter().map(|todo|create_rw_signal(todo))
-    });
-    */
+    let todos = create_rw_signal::<Vec<RwSignal<TodoItem>>>(vec![]);
 
     // get existing and create inital todo list
     // let existing_todos = create_resource(|| (), |_| async move { get_todos().await });
@@ -206,7 +195,13 @@ fn HomePage() -> impl IntoView {
     create_effect(move |_| {
         logging::log!("running effect for get_todos");
         if let Some(Ok(existing_todos)) = get_todos.value().get() {
-            todos.update(|todos| todos.extend(existing_todos));
+            todos.update(|todos| {
+                todos.extend(
+                    existing_todos
+                        .into_iter()
+                        .map(|todo| create_rw_signal(todo)),
+                )
+            });
         }
     });
 
@@ -215,7 +210,7 @@ fn HomePage() -> impl IntoView {
     create_effect(move |_| {
         logging::log!("running effect for add_todo");
         if let Some(Ok(todo)) = add_todo.value().get() {
-            todos.update(|todos| todos.push(todo));
+            todos.update(|todos| todos.push(create_rw_signal(todo)));
         };
     });
 
@@ -223,10 +218,10 @@ fn HomePage() -> impl IntoView {
     let toggle_todo = create_server_action::<ToggleTodo>();
     create_effect(move |_| {
         logging::log!("running effect for toggle_todo");
-        if let Some(Ok(toggled_id)) = toggle_todo.value().get() {
+        if let Some(Ok(id)) = toggle_todo.value().get() {
             todos.with_untracked(|todos| {
-                for (id, todo) in todos.iter() {
-                    if *id == toggled_id {
+                for todo in todos.iter() {
+                    if todo.with(|todo| todo.id == id) {
                         todo.update(|todo| todo.done = !todo.done);
                         break;
                     }
@@ -240,7 +235,7 @@ fn HomePage() -> impl IntoView {
     create_effect(move |_| {
         logging::log!("running effect for delete_todo");
         if let Some(Ok(del_id)) = delete_todo.value().get() {
-            todos.update(|todos| todos.retain(|(id, _)| *id != del_id));
+            todos.update(|todos| todos.retain(|todo| todo.with(|todo| todo.id != del_id)));
         };
     });
 
@@ -252,7 +247,7 @@ fn HomePage() -> impl IntoView {
             todos.with_untracked(|todos| {
                 todos
                     .iter()
-                    .for_each(|(_, todo)| todo.update(|todo| todo.done = true))
+                    .for_each(|todo| todo.update(|todo| todo.done = true))
             });
         };
     });
@@ -265,7 +260,7 @@ fn HomePage() -> impl IntoView {
             todos.with_untracked(|todos| {
                 todos
                     .iter()
-                    .for_each(|(_, todo)| todo.update(|todo| todo.done = false))
+                    .for_each(|todo| todo.update(|todo| todo.done = false))
             });
         };
     });
@@ -288,13 +283,11 @@ fn HomePage() -> impl IntoView {
             <Todoadd add_todo />
         </div>
         <div class="container mt-3">
-            /*
-            {move || { match todos.with(|todos| todos.is_empty()) {
+            {move || match todos.with(|todos| todos.is_empty()) {
                 true => view! {<p class="text-muted">No tasks!</p>}.into_view(),
                 false => view! {<Todolist todos delete_todo toggle_todo filter/>}.into_view(),
-            }}}
-            */
-            <Todolist todos delete_todo toggle_todo filter/>
+            }}
+            // <Todolist todos delete_todo toggle_todo filter/>
         </div>
     }
 }
@@ -331,7 +324,7 @@ fn Topbar(filter: RwSignal<String>) -> impl IntoView {
 
 #[component]
 fn Todolist(
-    todos: RwSignal<Vec<(u32, RwSignal<TodoItem>)>>,
+    todos: RwSignal<Vec<RwSignal<TodoItem>>>,
     delete_todo: Action<DeleteTodo, Result<u32, leptos::ServerFnError>>,
     toggle_todo: Action<ToggleTodo, Result<u32, leptos::ServerFnError>>,
     filter: RwSignal<String>,
@@ -355,14 +348,14 @@ fn Todolist(
     };
     view! {<For
         each=todos
-        key=|(id, _)| *id
-        children=move |(id, todo)| {
+        key=|todo| todo.with(|todo| todo.id)
+        children=move |todo| {
             view! {
                 <div class={move || card_class(todo)} style="background-color: #301934">
                     <div class="card-body d-flex">
                         <div>
                             <ActionForm action=toggle_todo>
-                                <input type="hidden" name="id" value={id}/>
+                                <input type="hidden" name="id" value={move || todo.with(|todo| todo.id)}/>
                                 <button type="submit" value="" class={move || toggle_class(todo)}/>
                             </ActionForm>
                         </div>
@@ -371,7 +364,7 @@ fn Todolist(
                         </div>
                         <div class="ms-auto">
                             <ActionForm action=delete_todo>
-                                <input type="hidden" name="id" value={id}/>
+                                <input type="hidden" name="id" value={move || todo.with(|todo| todo.id)}/>
                                 <button type="submit" value="" class="btn btn-sm border-0 btn-outline-danger bi bi-trash-fill"/>
                             </ActionForm>
                         </div>
