@@ -286,13 +286,13 @@ fn HomePage() -> impl IntoView {
 
     view! {
         <Topbar filter/>
-        <div class="container mt-3">
+        <div class="container mb-3">
             <AllTodosAction mark_all_done mark_all_undone delete_all/>
         </div>
-        <div class="container mt-3">
+        <div class="container mb-3">
             <Todoadd add_todo get_todos/>
         </div>
-        <div class="container mt-3">
+        <div class="container mb-3">
             <div hidden=move || !get_todos.pending().get()
                 class="spinner-border spinner-border-sm" role="status"></div>
             <p class="text-muted" hidden=move || {
@@ -308,7 +308,7 @@ fn HomePage() -> impl IntoView {
 #[component]
 fn Topbar(filter: RwSignal<String>) -> impl IntoView {
     view! {
-        <nav class="navbar navbar-expand-md bg-main">
+        <nav class="navbar navbar-expand-md bg-main mb-3">
             <div class="container-fluid">
                 <a class="navbar-brand" href="/">
                     <i class="bi bi-card-checklist text-warning me-1"></i> Todo</a>
@@ -362,7 +362,7 @@ fn Todolist(
         each=todos
         key=|todo| todo.with_untracked(|todo| todo.id)
         children=move |todo| { view! {
-            <div class="card mt-3 bg-main"
+            <div class="card mb-3 bg-main"
                 class:flash=add_todo.value().with_untracked(|data| data.is_some())
                 class:visually-hidden=move || !todo.with(
                     |todo| todo.task.contains(&filter.get())
