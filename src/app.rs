@@ -47,7 +47,7 @@ pub async fn get_todos() -> Result<Vec<TodoItem>, ServerFnError> {
     let pool = db().await?;
 
     // fake API delay
-    std::thread::sleep(std::time::Duration::from_millis(1000));
+    // std::thread::sleep(std::time::Duration::from_millis(1000));
 
     let todos = sqlx::query_as::<_, TodoItem>("SELECT * FROM todos")
         .fetch_all(&pool)
@@ -61,7 +61,7 @@ pub async fn add_todo(todo: String) -> Result<TodoItem, ServerFnError> {
     let pool = db().await?;
 
     // fake API delay
-    std::thread::sleep(std::time::Duration::from_millis(1000));
+    // std::thread::sleep(std::time::Duration::from_millis(1000));
 
     match sqlx::query_as::<_, TodoItem>(
         "INSERT INTO todos (task, done) VALUES (?, false) RETURNING *",
@@ -194,12 +194,14 @@ fn HomePage() -> impl IntoView {
     let get_todos = create_server_action::<GetTodos>();
     get_todos.dispatch(GetTodos {});
     create_effect(move |_| {
-        logging::log!("running effect for get_todos");
+        // logging::log!("running effect for get_todos");
         if let Some(Ok(existing_todos)) = get_todos.value().get() {
             todos.update(|todos| {
                 todos.extend(
                     existing_todos
                         .into_iter()
+                        // signals are owned by closest closure (this effect), which means
+                        // it's disposed when it reruns, manually set owner to parent
                         .map(|todo| with_owner(owner, || create_rw_signal(todo))),
                 );
             });
@@ -209,8 +211,10 @@ fn HomePage() -> impl IntoView {
     // add
     let add_todo = create_server_action::<AddTodo>();
     create_effect(move |_| {
-        logging::log!("running effect for add_todo");
+        // logging::log!("running effect for add_todo");
         if let Some(Ok(todo)) = add_todo.value().get() {
+            // signals are owned by closest closure (this effect), which means
+            // it's disposed when it reruns, manually set owner to parent
             todos.update(|todos| todos.push(with_owner(owner, || create_rw_signal(todo))));
         };
     });
@@ -218,7 +222,7 @@ fn HomePage() -> impl IntoView {
     // toggle
     let toggle_todo = create_server_action::<ToggleTodo>();
     create_effect(move |_| {
-        logging::log!("running effect for toggle_todo");
+        // logging::log!("running effect for toggle_todo");
         if let Some(Ok(id)) = toggle_todo.value().get() {
             todos.with_untracked(|todos| {
                 for todo in todos.iter() {
@@ -234,13 +238,14 @@ fn HomePage() -> impl IntoView {
     // delete
     let delete_todo = create_server_action::<DeleteTodo>();
     create_effect(move |_| {
-        logging::log!("running effect for delete_todo");
+        // logging::log!("running effect for delete_todo");
         if let Some(Ok(id)) = delete_todo.value().get() {
             todos.update(|todos| {
                 if let Some(index) = todos
                     .iter()
                     .position(|todo| todo.with_untracked(|todo| todo.id == id))
                 {
+                    // signal created using with_owner, must be manually disposed
                     todos[index].dispose();
                     todos.remove(index);
                 }
@@ -251,7 +256,7 @@ fn HomePage() -> impl IntoView {
     // all done
     let mark_all_done = create_server_action::<MarkAllDone>();
     create_effect(move |_| {
-        logging::log!("running effect for mark_all_done");
+        // logging::log!("running effect for mark_all_done");
         if let Some(Ok(())) = mark_all_done.value().get() {
             todos.with_untracked(|todos| {
                 todos
@@ -264,7 +269,7 @@ fn HomePage() -> impl IntoView {
     // all undone
     let mark_all_undone = create_server_action::<MarkAllUndone>();
     create_effect(move |_| {
-        logging::log!("running effect for mark_all_undone");
+        // logging::log!("running effect for mark_all_undone");
         if let Some(Ok(())) = mark_all_undone.value().get() {
             todos.with_untracked(|todos| {
                 todos
@@ -277,9 +282,10 @@ fn HomePage() -> impl IntoView {
     // all delete
     let delete_all = create_server_action::<DeleteAll>();
     create_effect(move |_| {
-        logging::log!("running effect for delete_all");
+        // logging::log!("running effect for delete_all");
         if let Some(Ok(())) = delete_all.value().get() {
             todos.update(|todos| {
+                // signal created using with_owner, must be manually disposed
                 todos.iter().for_each(|todo| todo.dispose());
                 todos.clear();
             });
@@ -410,7 +416,9 @@ fn Todoadd(
                     />
                     <label for="floatingTodo" class="text-muted">New todo...</label>
                 </div>
-                <button type="submit" class="btn btn-outline-success col-lg-1" disabled=move || add_todo.pending().get()>
+                <button type="submit" class="btn btn-outline-success col-lg-1"
+                    disabled=move || get_todos.pending().get()
+                >
                     <span hidden=move || add_todo.pending().get()>+ Add</span>
                     <div hidden=move || !add_todo.pending().get() class="spinner-border spinner-border-sm" role="status"></div>
                 </button>
