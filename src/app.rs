@@ -189,12 +189,10 @@ fn HomePage() -> impl IntoView {
     let owner = Owner::current().expect("there should be an owner");
     let todos = create_rw_signal::<Vec<RwSignal<TodoItem>>>(vec![]);
 
-    // get existing and create inital todo list
-    // let existing_todos = create_resource(|| (), |_| async move { get_todos().await });
+    // get todos
     let get_todos = create_server_action::<GetTodos>();
     get_todos.dispatch(GetTodos {});
     create_effect(move |_| {
-        // logging::log!("running effect for get_todos");
         if let Some(Ok(existing_todos)) = get_todos.value().get() {
             todos.update(|todos| {
                 todos.extend(
@@ -211,7 +209,6 @@ fn HomePage() -> impl IntoView {
     // add
     let add_todo = create_server_action::<AddTodo>();
     create_effect(move |_| {
-        // logging::log!("running effect for add_todo");
         if let Some(Ok(todo)) = add_todo.value().get() {
             // signals are owned by closest closure (this effect), which means
             // it's disposed when it reruns, manually set owner to parent
@@ -222,7 +219,6 @@ fn HomePage() -> impl IntoView {
     // toggle
     let toggle_todo = create_server_action::<ToggleTodo>();
     create_effect(move |_| {
-        // logging::log!("running effect for toggle_todo");
         if let Some(Ok(id)) = toggle_todo.value().get() {
             todos.with_untracked(|todos| {
                 for todo in todos.iter() {
@@ -238,7 +234,6 @@ fn HomePage() -> impl IntoView {
     // delete
     let delete_todo = create_server_action::<DeleteTodo>();
     create_effect(move |_| {
-        // logging::log!("running effect for delete_todo");
         if let Some(Ok(id)) = delete_todo.value().get() {
             todos.update(|todos| {
                 if let Some(index) = todos
@@ -256,7 +251,6 @@ fn HomePage() -> impl IntoView {
     // all done
     let mark_all_done = create_server_action::<MarkAllDone>();
     create_effect(move |_| {
-        // logging::log!("running effect for mark_all_done");
         if let Some(Ok(())) = mark_all_done.value().get() {
             todos.with_untracked(|todos| {
                 todos
@@ -269,7 +263,6 @@ fn HomePage() -> impl IntoView {
     // all undone
     let mark_all_undone = create_server_action::<MarkAllUndone>();
     create_effect(move |_| {
-        // logging::log!("running effect for mark_all_undone");
         if let Some(Ok(())) = mark_all_undone.value().get() {
             todos.with_untracked(|todos| {
                 todos
@@ -282,7 +275,6 @@ fn HomePage() -> impl IntoView {
     // all delete
     let delete_all = create_server_action::<DeleteAll>();
     create_effect(move |_| {
-        // logging::log!("running effect for delete_all");
         if let Some(Ok(())) = delete_all.value().get() {
             todos.update(|todos| {
                 // signal created using with_owner, must be manually disposed
@@ -301,13 +293,14 @@ fn HomePage() -> impl IntoView {
             <Todoadd add_todo get_todos/>
         </div>
         <div class="container mt-3">
-            {move || match get_todos.pending().get() {
-                true => view! {<p class="text-muted">Loading...</p>}.into_view(),
-                false => {move || match todos.with(|todos| todos.is_empty()) {
-                    true => view! {<p class="text-muted">No tasks!</p>}.into_view(),
-                    false => view! {<Todolist todos delete_todo toggle_todo filter/>}.into_view(),
-                }}.into_view()
-            }}
+            <div hidden=move || !get_todos.pending().get()
+                class="spinner-border spinner-border-sm" role="status"></div>
+            <p class="text-muted" hidden=move || {
+                get_todos.pending().get() || !todos.with(|todos| todos.is_empty())
+            }>
+                <i class="text-success bi bi-check-square-fill"></i> No tasks!
+            </p>
+            <Todolist todos delete_todo toggle_todo filter add_todo/>
         </div>
     }
 }
@@ -315,12 +308,15 @@ fn HomePage() -> impl IntoView {
 #[component]
 fn Topbar(filter: RwSignal<String>) -> impl IntoView {
     view! {
-        <nav class="navbar navbar-expand-md" style="background-color: #301934">
+        <nav class="navbar navbar-expand-md bg-main">
             <div class="container-fluid">
-                <a class="navbar-brand" href="#"><i class="bi bi-card-checklist text-warning me-1"></i> Todo</a>
-                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
-                    aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
+                <a class="navbar-brand" href="/">
+                    <i class="bi bi-card-checklist text-warning me-1"></i> Todo</a>
+                <button class="navbar-toggler" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
+                    aria-controls="navbarSupportedContent" aria-expanded="false"
+                    aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
                 </button>
                 <div class="collapse navbar-collapse" id="navbarSupportedContent">
                     <ul class="navbar-nav me-auto mb-2 mb-lg-0">
@@ -330,7 +326,8 @@ fn Topbar(filter: RwSignal<String>) -> impl IntoView {
                             <span class="input-group-text" id="addon-wrapping">
                                <i class="bi bi-search"></i>
                             </span>
-                            <input class="form-control me-2" type="search" placeholder="Filter"
+                            <input class="form-control me-2" type="search"
+                                placeholder="Filter"
                                 prop:value=""
                                 on:input=move |ev| filter.set(event_target_value(&ev))
                             />
@@ -348,14 +345,8 @@ fn Todolist(
     delete_todo: Action<DeleteTodo, Result<u32, leptos::ServerFnError>>,
     toggle_todo: Action<ToggleTodo, Result<u32, leptos::ServerFnError>>,
     filter: RwSignal<String>,
+    add_todo: Action<AddTodo, Result<TodoItem, leptos::ServerFnError>>,
 ) -> impl IntoView {
-    let card_class = move |todo: RwSignal<TodoItem>| {
-        let mut class = "card mt-3".to_string();
-        if !todo.with(|todo| todo.task.contains(&filter.get())) {
-            class.push_str(" visually-hidden");
-        }
-        class
-    };
     let toggle_class = move |todo: RwSignal<TodoItem>| {
         format!(
             "btn btn-sm border-0 bi {}",
@@ -366,32 +357,35 @@ fn Todolist(
             }
         )
     };
+
     view! {<For
         each=todos
         key=|todo| todo.with_untracked(|todo| todo.id)
-        children=move |todo| {
-            view! {
-                <div class={move || card_class(todo)} style="background-color: #301934">
-                    <div class="card-body d-flex">
-                        <div>
-                            <ActionForm action=toggle_todo>
-                                <input type="hidden" name="id" value={move || todo.with(|todo| todo.id)}/>
-                                <button type="submit" value="" class={move || toggle_class(todo)}/>
-                            </ActionForm>
-                        </div>
-                        <div class="flex-fill text-start mx-3">
-                            {move || todo.with(|todo| todo.task.clone())}
-                        </div>
-                        <div class="ms-auto">
-                            <ActionForm action=delete_todo>
-                                <input type="hidden" name="id" value={move || todo.with(|todo| todo.id)}/>
-                                <button type="submit" value="" class="btn btn-sm border-0 btn-outline-danger bi bi-trash-fill"/>
-                            </ActionForm>
-                        </div>
+        children=move |todo| { view! {
+            <div class="card mt-3 bg-main"
+                class:flash=add_todo.value().with_untracked(|data| data.is_some())
+                class:visually-hidden=move || !todo.with(
+                    |todo| todo.task.contains(&filter.get())
+                )>
+                <div class="card-body d-flex align-items-center">
+                    <ActionForm action=toggle_todo>
+                        <input type="hidden" name="id"
+                            value=todo.with_untracked(|todo| todo.id)/>
+                        <button type="submit" value=""
+                            class=move || toggle_class(todo)/>
+                    </ActionForm>
+                    <div class="text-start mx-3 flex-fill">
+                        {move || todo.with(|todo| todo.task.clone())}
                     </div>
+                    <ActionForm action=delete_todo>
+                        <input type="hidden" name="id"
+                            value=todo.with_untracked(|todo| todo.id)/>
+                        <button type="submit" value=""
+                            class="btn btn-sm border-0 btn-outline-danger bi bi-trash-fill"/>
+                    </ActionForm>
                 </div>
-            }
-        }
+            </div>
+        }}
     />}
 }
 
@@ -407,8 +401,7 @@ fn Todoadd(
                     <input type="text" name="todo" id="floatingTodo" class="form-control"
                         class:placeholder=move || add_todo.pending().get()
                         placeholder="Take out the trash" required autofocus
-                        readonly=move || add_todo.pending().get()
-                        disabled=move || get_todos.pending().get()
+                        readonly=move || add_todo.pending().get() || get_todos.pending().get()
                         prop:value=move || match add_todo.input().get() {
                             Some(value) => value.todo,
                             None => "".into(),
