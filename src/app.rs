@@ -44,6 +44,11 @@ cfg_if! {
 
 #[server(GetTodos, "/api")]
 pub async fn get_todos() -> Result<Vec<TodoItem>, ServerFnError> {
+    // fake API error
+    // return Err(ServerFnError::ServerError(
+    //     "Testing error getting todos".into(),
+    // ));
+
     let pool = db().await?;
 
     // fake API delay
@@ -58,6 +63,11 @@ pub async fn get_todos() -> Result<Vec<TodoItem>, ServerFnError> {
 
 #[server(AddTodo, "/api")]
 pub async fn add_todo(todo: String) -> Result<TodoItem, ServerFnError> {
+    // fake API error
+    // return Err(ServerFnError::ServerError(
+    //     "Testing error adding todo".into(),
+    // ));
+
     let pool = db().await?;
 
     // fake API delay
@@ -286,20 +296,17 @@ fn HomePage() -> impl IntoView {
 
     view! {
         <Topbar filter/>
+
         <div class="container mb-3">
             <AllTodosAction mark_all_done mark_all_undone delete_all/>
         </div>
+
         <div class="container mb-3">
             <Todoadd add_todo get_todos/>
         </div>
+
         <div class="container mb-3">
-            <div hidden=move || !get_todos.pending().get()
-                class="spinner-border spinner-border-sm" role="status"></div>
-            <p class="text-muted" hidden=move || {
-                get_todos.pending().get() || !todos.with(|todos| todos.is_empty())
-            }>
-                <i class="text-success bi bi-check-square-fill"></i> No tasks!
-            </p>
+            <ShowMessages todos get_todos add_todo/>
             <Todolist todos delete_todo toggle_todo filter add_todo/>
         </div>
     }
@@ -312,20 +319,24 @@ fn Topbar(filter: RwSignal<String>) -> impl IntoView {
             <div class="container-fluid">
                 <a class="navbar-brand" href="/">
                     <i class="bi bi-card-checklist text-warning me-1"></i> Todo</a>
+
                 <button class="navbar-toggler" type="button"
                     data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
                     aria-controls="navbarSupportedContent" aria-expanded="false"
                     aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>
                 </button>
+
                 <div class="collapse navbar-collapse" id="navbarSupportedContent">
                     <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     </ul>
+
                     <div class="d-flex" role="search">
                         <div class="input-group flex-nowrap">
                             <span class="input-group-text" id="addon-wrapping">
                                <i class="bi bi-search"></i>
                             </span>
+
                             <input class="form-control me-2" type="search"
                                 placeholder="Filter"
                                 prop:value=""
@@ -336,6 +347,126 @@ fn Topbar(filter: RwSignal<String>) -> impl IntoView {
                 </div>
             </div>
         </nav>
+    }
+}
+
+#[component]
+fn Todoadd(
+    add_todo: Action<AddTodo, Result<TodoItem, leptos::ServerFnError>>,
+    get_todos: Action<GetTodos, Result<Vec<TodoItem>, leptos::ServerFnError>>,
+) -> impl IntoView {
+    view! {
+        <ActionForm action=add_todo>
+            <div class="input-group">
+                <div class="form-floating" class:placeholder-glow=move || add_todo.pending().get()>
+                    <input type="text" name="todo" id="floatingTodo" class="form-control"
+                        class:placeholder=move || add_todo.pending().get()
+                        placeholder="Take out the trash" required autofocus
+                        readonly=move || add_todo.pending().get() || get_todos.pending().get()
+                        prop:value=move || match add_todo.input().get() {
+                            Some(value) => value.todo,
+                            None => "".into(),
+                        }
+                    />
+                    <label for="floatingTodo" class="text-muted">New todo...</label>
+                </div>
+
+                <button type="submit" class="btn btn-outline-success col-lg-1"
+                    disabled=move || get_todos.pending().get()
+                >
+                    <span hidden=move || add_todo.pending().get()>+ Add</span>
+
+                    <div hidden=move || !add_todo.pending().get() class="spinner-border spinner-border-sm" role="status"></div>
+                </button>
+            </div>
+        </ActionForm>
+    }
+}
+
+#[component]
+fn AllTodosAction(
+    mark_all_done: Action<MarkAllDone, Result<(), leptos::ServerFnError>>,
+    mark_all_undone: Action<MarkAllUndone, Result<(), leptos::ServerFnError>>,
+    delete_all: Action<DeleteAll, Result<(), leptos::ServerFnError>>,
+) -> impl IntoView {
+    view! {
+        <div class="d-flex justify-content-center">
+            <ActionForm action=mark_all_done>
+                <input type="submit" value="All Done" class="btn btn-outline-success mx-3"/>
+            </ActionForm>
+
+            <ActionForm action=mark_all_undone>
+                <input type="submit" value="All Undone" class="btn btn-outline-warning mx-3"/>
+            </ActionForm>
+
+            <input type="button" value="Delete All" class="btn btn-outline-danger mx-3" data-bs-toggle="modal" data-bs-target="#confirm-delete"/>
+        </div>
+
+        <div class="modal" tabindex="-1" id="confirm-delete">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title text-danger">Delete All</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+
+                    <div class="modal-body text-start">
+                        <p>This will delete all todos, are you sure?</p>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <ActionForm action=delete_all>
+                            <input type="submit" value="Delete All" class="btn btn-danger" data-bs-dismiss="modal"/>
+                        </ActionForm>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+#[component]
+fn ShowMessages(
+    todos: RwSignal<Vec<RwSignal<TodoItem>>>,
+    get_todos: Action<GetTodos, Result<Vec<TodoItem>, leptos::ServerFnError>>,
+    add_todo: Action<AddTodo, Result<TodoItem, leptos::ServerFnError>>,
+) -> impl IntoView {
+    view! {
+        {move || {
+            if get_todos.pending().get() {
+                view! {
+                    <div class="spinner-border spinner-border-sm" role="status"></div>
+                }
+            } else if let Some(Err(err)) = get_todos.value().get() {
+                view! {
+                    <div class="alert alert-warning" role="alert">
+                       <h5 class="alert-heading">Error getting todos, refresh to try again</h5>
+                       <p class="text-muted">{err.to_string()}</p>
+                    </div>
+                }
+            } else if todos.with(|todos| todos.is_empty()) {
+                view! {
+                    <div class="text-muted">
+                        <i class="text-success bi bi-check-square-fill"></i> No tasks!
+                    </div>
+                }
+            } else {
+                view! {<div></div>}
+            }
+        }}
+        {move || {
+            if let Some(Err(err)) = add_todo.value().get() {
+                view! {
+                    <div class="alert alert-warning" role="alert">
+                       <h5 class="alert-heading">Error adding todo</h5>
+                       <p class="text-muted">{err.to_string()}</p>
+                    </div>
+                }
+            } else {
+                view! {<div></div>}
+            }
+        }}
     }
 }
 
@@ -374,9 +505,11 @@ fn Todolist(
                         <button type="submit" value=""
                             class=move || toggle_class(todo)/>
                     </ActionForm>
+
                     <div class="text-start mx-3 flex-fill">
                         {move || todo.with(|todo| todo.task.clone())}
                     </div>
+
                     <ActionForm action=delete_todo>
                         <input type="hidden" name="id"
                             value=todo.with_untracked(|todo| todo.id)/>
@@ -387,74 +520,4 @@ fn Todolist(
             </div>
         }}
     />}
-}
-
-#[component]
-fn Todoadd(
-    add_todo: Action<AddTodo, Result<TodoItem, leptos::ServerFnError>>,
-    get_todos: Action<GetTodos, Result<Vec<TodoItem>, leptos::ServerFnError>>,
-) -> impl IntoView {
-    view! {
-        <ActionForm action=add_todo>
-            <div class="input-group">
-                <div class="form-floating" class:placeholder-glow=move || add_todo.pending().get()>
-                    <input type="text" name="todo" id="floatingTodo" class="form-control"
-                        class:placeholder=move || add_todo.pending().get()
-                        placeholder="Take out the trash" required autofocus
-                        readonly=move || add_todo.pending().get() || get_todos.pending().get()
-                        prop:value=move || match add_todo.input().get() {
-                            Some(value) => value.todo,
-                            None => "".into(),
-                        }
-                    />
-                    <label for="floatingTodo" class="text-muted">New todo...</label>
-                </div>
-                <button type="submit" class="btn btn-outline-success col-lg-1"
-                    disabled=move || get_todos.pending().get()
-                >
-                    <span hidden=move || add_todo.pending().get()>+ Add</span>
-                    <div hidden=move || !add_todo.pending().get() class="spinner-border spinner-border-sm" role="status"></div>
-                </button>
-            </div>
-        </ActionForm>
-    }
-}
-
-#[component]
-fn AllTodosAction(
-    mark_all_done: Action<MarkAllDone, Result<(), leptos::ServerFnError>>,
-    mark_all_undone: Action<MarkAllUndone, Result<(), leptos::ServerFnError>>,
-    delete_all: Action<DeleteAll, Result<(), leptos::ServerFnError>>,
-) -> impl IntoView {
-    view! {
-        <div class="d-flex justify-content-center">
-            <ActionForm action=mark_all_done>
-                <input type="submit" value="All Done" class="btn btn-outline-success mx-3"/>
-            </ActionForm>
-            <ActionForm action=mark_all_undone>
-                <input type="submit" value="All Undone" class="btn btn-outline-warning mx-3"/>
-            </ActionForm>
-            <input type="button" value="Delete All" class="btn btn-outline-danger mx-3" data-bs-toggle="modal" data-bs-target="#confirm-delete"/>
-        </div>
-
-        <div class="modal" tabindex="-1" id="confirm-delete">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title text-danger">Delete All</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body text-start">
-                        <p>This will delete all todos, are you sure?</p>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                        <ActionForm action=delete_all>
-                            <input type="submit" value="Delete All" class="btn btn-danger" data-bs-dismiss="modal"/>
-                        </ActionForm>
-                    </div>
-                </div>
-            </div>
-        </div>
-    }
 }
