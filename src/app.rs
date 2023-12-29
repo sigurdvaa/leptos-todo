@@ -64,9 +64,9 @@ pub async fn get_todos() -> Result<Vec<TodoItem>, ServerFnError> {
 #[server(AddTodo, "/api")]
 pub async fn add_todo(todo: String) -> Result<TodoItem, ServerFnError> {
     // fake API error
-    // return Err(ServerFnError::ServerError(
-    //     "Testing error adding todo".into(),
-    // ));
+    return Err(ServerFnError::ServerError(format!(
+        "Testing error adding todo: {todo}"
+    )));
 
     let pool = db().await?;
 
@@ -440,9 +440,9 @@ fn ShowMessages(
                 }
             } else if let Some(Err(err)) = get_todos.value().get() {
                 view! {
-                    <div class="alert alert-warning" role="alert">
-                       <h5 class="alert-heading">Error getting todos, refresh to try again</h5>
-                       <p class="text-muted">{err.to_string()}</p>
+                    <div class="alert alert-warning col-6 mx-auto" role="alert">
+                        <div>Error Getting Todos</div>
+                        <div class="text-muted mb-0">{err.to_string()}</div>
                     </div>
                 }
             } else if todos.with(|todos| todos.is_empty()) {
@@ -458,9 +458,9 @@ fn ShowMessages(
         {move || {
             if let Some(Err(err)) = add_todo.value().get() {
                 view! {
-                    <div class="alert alert-warning" role="alert">
-                       <h5 class="alert-heading">Error adding todo</h5>
-                       <p class="text-muted">{err.to_string()}</p>
+                    <div class="alert alert-warning col-6 mx-auto" role="alert">
+                        <div>Error Adding Todo</div>
+                        <div class="text-muted mb-0">{err.to_string()}</div>
                     </div>
                 }
             } else {
