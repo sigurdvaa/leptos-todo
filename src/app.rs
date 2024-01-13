@@ -64,9 +64,9 @@ pub async fn get_todos() -> Result<Vec<TodoItem>, ServerFnError> {
 #[server(AddTodo, "/api")]
 pub async fn add_todo(todo: String) -> Result<TodoItem, ServerFnError> {
     // fake API error
-    return Err(ServerFnError::ServerError(format!(
-        "Testing error adding todo: {todo}"
-    )));
+    // return Err(ServerFnError::ServerError(format!(
+    //     "Testing error adding todo: {todo}"
+    // )));
 
     let pool = db().await?;
 
